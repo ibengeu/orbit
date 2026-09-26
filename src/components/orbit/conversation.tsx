@@ -51,12 +51,12 @@ export function ConversationPane({ messages }: { messages: Message[] }) {
             emptyTitle={
               conversation.kind === "channel"
                 ? `This is the start of #${conversation.name}`
-                : `This is the start of your conversation`
+                : "Start your conversation"
             }
             emptyBody={
               conversation.kind === "channel"
                 ? conversation.description
-                : "Say hello. Messages stay on this device."
+                : "Send the first message to start this conversation."
             }
           />
           <div className="shrink-0 px-4 pt-2 pb-4">
@@ -80,7 +80,7 @@ export function ConversationPane({ messages }: { messages: Message[] }) {
         <div className="flex flex-1 items-center justify-center px-6 text-center">
           <div className="max-w-sm">
             <h2 className="text-lg font-semibold">No direct messages yet</h2>
-            <p className="mt-2 text-sm text-ink-soft">This workspace only has channels. Switch back to Orbit for the launch conversations.</p>
+            <p className="mt-2 text-sm text-ink-soft">This workspace has no direct messages. Switch to Orbit to see the sample direct messages.</p>
           </div>
         </div>
       )}

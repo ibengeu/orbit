@@ -1,0 +1,462 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-26T13:02:30Z",
+  "title": "Design System: Orbit",
+  "extensions": {
+    "colorMeta": {
+      "burnt-brick": {
+        "role": "primary",
+        "displayName": "Burnt Brick",
+        "canonical": "#9e341f",
+        "tonalRamp": [
+          "oklch(15% 0.1448 33.1)",
+          "oklch(25% 0.1448 33.1)",
+          "oklch(35% 0.1448 33.1)",
+          "oklch(45% 0.1448 33.1)",
+          "oklch(55% 0.1448 33.1)",
+          "oklch(65% 0.1448 33.1)",
+          "oklch(75% 0.1448 33.1)",
+          "oklch(95% 0.1448 33.1)"
+        ]
+      },
+      "action-ink": {
+        "role": "neutral",
+        "displayName": "Warm Action Ink",
+        "canonical": "#fff7f4",
+        "tonalRamp": [
+          "oklch(15% 0.0095 41.9)",
+          "oklch(25% 0.0095 41.9)",
+          "oklch(35% 0.0095 41.9)",
+          "oklch(45% 0.0095 41.9)",
+          "oklch(55% 0.0095 41.9)",
+          "oklch(65% 0.0095 41.9)",
+          "oklch(75% 0.0095 41.9)",
+          "oklch(95% 0.0095 41.9)"
+        ]
+      },
+      "ink-plum": {
+        "role": "secondary",
+        "displayName": "Ink Plum",
+        "canonical": "#241820",
+        "tonalRamp": [
+          "oklch(15% 0.0239 339.3)",
+          "oklch(25% 0.0239 339.3)",
+          "oklch(35% 0.0239 339.3)",
+          "oklch(45% 0.0239 339.3)",
+          "oklch(55% 0.0239 339.3)",
+          "oklch(65% 0.0239 339.3)",
+          "oklch(75% 0.0239 339.3)",
+          "oklch(95% 0.0239 339.3)"
+        ]
+      },
+      "plum-panel": {
+        "role": "secondary",
+        "displayName": "Raised Plum",
+        "canonical": "#312433",
+        "tonalRamp": [
+          "oklch(15% 0.0326 321.9)",
+          "oklch(25% 0.0326 321.9)",
+          "oklch(35% 0.0326 321.9)",
+          "oklch(45% 0.0326 321.9)",
+          "oklch(55% 0.0326 321.9)",
+          "oklch(65% 0.0326 321.9)",
+          "oklch(75% 0.0326 321.9)",
+          "oklch(95% 0.0326 321.9)"
+        ]
+      },
+      "plum-hover": {
+        "role": "secondary",
+        "displayName": "Plum Hover",
+        "canonical": "#3d2e42",
+        "tonalRamp": [
+          "oklch(15% 0.0400 317.6)",
+          "oklch(25% 0.0400 317.6)",
+          "oklch(35% 0.0400 317.6)",
+          "oklch(45% 0.0400 317.6)",
+          "oklch(55% 0.0400 317.6)",
+          "oklch(65% 0.0400 317.6)",
+          "oklch(75% 0.0400 317.6)",
+          "oklch(95% 0.0400 317.6)"
+        ]
+      },
+      "plum-divider": {
+        "role": "secondary",
+        "displayName": "Plum Divider",
+        "canonical": "#4a3b4e",
+        "tonalRamp": [
+          "oklch(15% 0.0374 319.1)",
+          "oklch(25% 0.0374 319.1)",
+          "oklch(35% 0.0374 319.1)",
+          "oklch(45% 0.0374 319.1)",
+          "oklch(55% 0.0374 319.1)",
+          "oklch(65% 0.0374 319.1)",
+          "oklch(75% 0.0374 319.1)",
+          "oklch(95% 0.0374 319.1)"
+        ]
+      },
+      "plum-muted": {
+        "role": "secondary",
+        "displayName": "Plum Muted",
+        "canonical": "#d5c9d0",
+        "tonalRamp": [
+          "oklch(15% 0.0163 341.5)",
+          "oklch(25% 0.0163 341.5)",
+          "oklch(35% 0.0163 341.5)",
+          "oklch(45% 0.0163 341.5)",
+          "oklch(55% 0.0163 341.5)",
+          "oklch(65% 0.0163 341.5)",
+          "oklch(75% 0.0163 341.5)",
+          "oklch(95% 0.0163 341.5)"
+        ]
+      },
+      "plum-faint": {
+        "role": "secondary",
+        "displayName": "Plum Faint",
+        "canonical": "#b7a8b0",
+        "tonalRamp": [
+          "oklch(15% 0.0205 344.1)",
+          "oklch(25% 0.0205 344.1)",
+          "oklch(35% 0.0205 344.1)",
+          "oklch(45% 0.0205 344.1)",
+          "oklch(55% 0.0205 344.1)",
+          "oklch(65% 0.0205 344.1)",
+          "oklch(75% 0.0205 344.1)",
+          "oklch(95% 0.0205 344.1)"
+        ]
+      },
+      "text-ink": {
+        "role": "neutral",
+        "displayName": "Near-Black Ink",
+        "canonical": "#1c1416",
+        "tonalRamp": [
+          "oklch(15% 0.0136 1.7)",
+          "oklch(25% 0.0136 1.7)",
+          "oklch(35% 0.0136 1.7)",
+          "oklch(45% 0.0136 1.7)",
+          "oklch(55% 0.0136 1.7)",
+          "oklch(65% 0.0136 1.7)",
+          "oklch(75% 0.0136 1.7)",
+          "oklch(95% 0.0136 1.7)"
+        ]
+      },
+      "soft-ink": {
+        "role": "neutral",
+        "displayName": "Soft Ink",
+        "canonical": "#534844",
+        "tonalRamp": [
+          "oklch(15% 0.0164 41.1)",
+          "oklch(25% 0.0164 41.1)",
+          "oklch(35% 0.0164 41.1)",
+          "oklch(45% 0.0164 41.1)",
+          "oklch(55% 0.0164 41.1)",
+          "oklch(65% 0.0164 41.1)",
+          "oklch(75% 0.0164 41.1)",
+          "oklch(95% 0.0164 41.1)"
+        ]
+      },
+      "faint-ink": {
+        "role": "neutral",
+        "displayName": "Faint Ink",
+        "canonical": "#665c58",
+        "tonalRamp": [
+          "oklch(15% 0.0145 43.1)",
+          "oklch(25% 0.0145 43.1)",
+          "oklch(35% 0.0145 43.1)",
+          "oklch(45% 0.0145 43.1)",
+          "oklch(55% 0.0145 43.1)",
+          "oklch(65% 0.0145 43.1)",
+          "oklch(75% 0.0145 43.1)",
+          "oklch(95% 0.0145 43.1)"
+        ]
+      },
+      "warm-paper": {
+        "role": "neutral",
+        "displayName": "Warm Paper",
+        "canonical": "#f6f3ee",
+        "tonalRamp": [
+          "oklch(15% 0.0074 80.7)",
+          "oklch(25% 0.0074 80.7)",
+          "oklch(35% 0.0074 80.7)",
+          "oklch(45% 0.0074 80.7)",
+          "oklch(55% 0.0074 80.7)",
+          "oklch(65% 0.0074 80.7)",
+          "oklch(75% 0.0074 80.7)",
+          "oklch(95% 0.0074 80.7)"
+        ]
+      },
+      "raised-paper": {
+        "role": "neutral",
+        "displayName": "Raised Paper",
+        "canonical": "#fffcf8",
+        "tonalRamp": [
+          "oklch(15% 0.0062 75.4)",
+          "oklch(25% 0.0062 75.4)",
+          "oklch(35% 0.0062 75.4)",
+          "oklch(45% 0.0062 75.4)",
+          "oklch(55% 0.0062 75.4)",
+          "oklch(65% 0.0062 75.4)",
+          "oklch(75% 0.0062 75.4)",
+          "oklch(95% 0.0062 75.4)"
+        ]
+      },
+      "warm-divider": {
+        "role": "neutral",
+        "displayName": "Warm Divider",
+        "canonical": "#e4dcd3",
+        "tonalRamp": [
+          "oklch(15% 0.0150 70.9)",
+          "oklch(25% 0.0150 70.9)",
+          "oklch(35% 0.0150 70.9)",
+          "oklch(45% 0.0150 70.9)",
+          "oklch(55% 0.0150 70.9)",
+          "oklch(65% 0.0150 70.9)",
+          "oklch(75% 0.0150 70.9)",
+          "oklch(95% 0.0150 70.9)"
+        ]
+      },
+      "strong-divider": {
+        "role": "neutral",
+        "displayName": "Strong Divider",
+        "canonical": "#d3c9be",
+        "tonalRamp": [
+          "oklch(15% 0.0188 70.2)",
+          "oklch(25% 0.0188 70.2)",
+          "oklch(35% 0.0188 70.2)",
+          "oklch(45% 0.0188 70.2)",
+          "oklch(55% 0.0188 70.2)",
+          "oklch(65% 0.0188 70.2)",
+          "oklch(75% 0.0188 70.2)",
+          "oklch(95% 0.0188 70.2)"
+        ]
+      },
+      "online-green": {
+        "role": "tertiary",
+        "displayName": "Online Green",
+        "canonical": "#1f7a4d",
+        "tonalRamp": [
+          "oklch(15% 0.1102 156.8)",
+          "oklch(25% 0.1102 156.8)",
+          "oklch(35% 0.1102 156.8)",
+          "oklch(45% 0.1102 156.8)",
+          "oklch(55% 0.1102 156.8)",
+          "oklch(65% 0.1102 156.8)",
+          "oklch(75% 0.1102 156.8)",
+          "oklch(95% 0.1102 156.8)"
+        ]
+      },
+      "away-ochre": {
+        "role": "tertiary",
+        "displayName": "Away Ochre",
+        "canonical": "#8a5a12",
+        "tonalRamp": [
+          "oklch(15% 0.1025 70.8)",
+          "oklch(25% 0.1025 70.8)",
+          "oklch(35% 0.1025 70.8)",
+          "oklch(45% 0.1025 70.8)",
+          "oklch(55% 0.1025 70.8)",
+          "oklch(65% 0.1025 70.8)",
+          "oklch(75% 0.1025 70.8)",
+          "oklch(95% 0.1025 70.8)"
+        ]
+      },
+      "danger-red": {
+        "role": "tertiary",
+        "displayName": "Danger Red",
+        "canonical": "#8e2e28",
+        "tonalRamp": [
+          "oklch(15% 0.1312 27.3)",
+          "oklch(25% 0.1312 27.3)",
+          "oklch(35% 0.1312 27.3)",
+          "oklch(45% 0.1312 27.3)",
+          "oklch(55% 0.1312 27.3)",
+          "oklch(65% 0.1312 27.3)",
+          "oklch(75% 0.1312 27.3)",
+          "oklch(95% 0.1312 27.3)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Welcome and prominent dialog titles."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Pane headings and conversation titles."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Messages, descriptions, and control labels."
+      },
+      "action": {
+        "displayName": "Action",
+        "purpose": "Primary actions and emphasized navigation."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Compact metadata and uppercase sidebar section labels."
+      },
+      "code": {
+        "displayName": "Code",
+        "purpose": "Inline code samples."
+      }
+    },
+    "shadows": [
+      {
+        "name": "pop",
+        "value": "0 12px 32px rgb(28 20 22 / 0.14)",
+        "purpose": "Floating menus, dialogs, search, and temporary thread overlays."
+      }
+    ],
+    "motion": [
+      {
+        "name": "quick",
+        "value": "150ms",
+        "purpose": "Small control-state transitions."
+      },
+      {
+        "name": "fast",
+        "value": "250ms",
+        "purpose": "Entry motion for popovers and newly shown surfaces."
+      },
+      {
+        "name": "smooth",
+        "value": "cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Easing for short interface transitions."
+      },
+      {
+        "name": "ring",
+        "value": "1.4s ease-out infinite",
+        "purpose": "Attention ring. Disabled by reduced-motion preference."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "md",
+        "value": "768px",
+        "purpose": "One-pane mobile flow changes to rail and sidebar."
+      },
+      {
+        "name": "lg",
+        "value": "1024px",
+        "purpose": "Sidebar width increases."
+      },
+      {
+        "name": "xl",
+        "value": "1200px",
+        "purpose": "Thread pane docks. CSS comment says 1280px; token sets 1200px."
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary action button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Brick action used for form submission and high-priority actions.",
+      "html": "<button class=\"ds-button-primary\">Create channel</button>",
+      "css": ".ds-button-primary { appearance: none; align-items: center; background: var(--color-accent); border: 0; border-radius: var(--radius-md); color: var(--color-accent-ink); cursor: pointer; display: inline-flex; font: 600 .875rem/1.25rem var(--font-sans); justify-content: center; padding: .5rem .75rem; } .ds-button-primary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }"
+    },
+    {
+      "name": "Quiet button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Low-emphasis toolbar or secondary action.",
+      "html": "<button class=\"ds-button-quiet\">Mark all read</button>",
+      "css": ".ds-button-quiet { appearance: none; background: transparent; border: 0; border-radius: var(--radius-md); color: var(--color-ink-soft); cursor: pointer; font: 400 .875rem/1.25rem var(--font-sans); padding: .5rem .75rem; transition: background var(--duration-quick) var(--ease-smooth), color var(--duration-quick) var(--ease-smooth); } .ds-button-quiet:hover { background: var(--color-line); color: var(--color-ink); } .ds-button-quiet:active { background: var(--color-line-strong); } .ds-button-quiet:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }"
+    },
+    {
+      "name": "Text field",
+      "kind": "input",
+      "refersTo": "text-field",
+      "description": "Compact text field used in workspace and channel forms.",
+      "html": "<label class=\"ds-field\"><span>Channel name</span><input value=\"design\" /></label>",
+      "css": ".ds-field { color: var(--color-ink); display: grid; font: 500 .875rem/1.25rem var(--font-sans); gap: .25rem; } .ds-field input { background: var(--color-paper); border: 1px solid var(--color-line); border-radius: var(--radius-md); color: var(--color-ink); font: 400 .875rem/1.25rem var(--font-sans); padding: .5rem .75rem; } .ds-field input:focus-visible { border-color: var(--color-accent); }"
+    },
+    {
+      "name": "Conversation navigation",
+      "kind": "nav",
+      "refersTo": "nav-item-active",
+      "description": "Active channel row within the plum workspace sidebar.",
+      "html": "<nav class=\"ds-sidebar\" aria-label=\"Channels\"><button class=\"ds-nav-item\"># <span>general</span></button><button class=\"ds-nav-item\" aria-current=\"page\"># <span>design</span></button></nav>",
+      "css": ".ds-sidebar { background: var(--color-plum-raised); display: grid; gap: .125rem; padding: .5rem; } .ds-nav-item { align-items: center; background: transparent; border: 0; border-radius: var(--radius-md); color: var(--color-plum-muted); cursor: pointer; display: flex; font: 500 .875rem/1.25rem var(--font-sans); gap: .5rem; height: 2.75rem; padding: 0 .5rem; text-align: left; } .ds-nav-item:hover { background: var(--color-plum-hover); color: var(--color-paper); } .ds-nav-item[aria-current=\"page\"] { background: var(--color-paper); color: var(--color-ink); font-weight: 600; } .ds-nav-item:focus-visible { outline: 2px solid var(--color-paper); outline-offset: 2px; }"
+    },
+    {
+      "name": "Workspace rail tile",
+      "kind": "nav",
+      "refersTo": "workspace-rail-active",
+      "description": "Selected workspace tile in the dark rail.",
+      "html": "<button class=\"ds-workspace\" aria-label=\"Orbit workspace\"><svg viewBox=\"0 0 32 32\" aria-hidden=\"true\"><circle cx=\"16\" cy=\"16\" r=\"3.2\" fill=\"currentColor\"/><ellipse cx=\"16\" cy=\"16\" rx=\"12\" ry=\"5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" transform=\"rotate(-24 16 16)\"/><ellipse cx=\"16\" cy=\"16\" rx=\"12\" ry=\"5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" transform=\"rotate(58 16 16)\"/></svg></button>",
+      "css": ".ds-workspace { align-items: center; background: var(--color-paper); border: 1px solid var(--color-paper); border-radius: var(--radius-lg); color: var(--color-ink); cursor: pointer; display: inline-flex; height: 2.75rem; justify-content: center; width: 2.75rem; } .ds-workspace svg { height: 1.5rem; width: 1.5rem; } .ds-workspace:focus-visible { outline: 2px solid var(--color-paper); outline-offset: 2px; }"
+    },
+    {
+      "name": "Message composer",
+      "kind": "custom",
+      "refersTo": "message-composer",
+      "description": "Raised composer surface with integrated text input and primary send action.",
+      "html": "<div class=\"ds-composer\"><textarea aria-label=\"Message\" placeholder=\"Message #design\"></textarea><div class=\"ds-composer-tools\"><span>Attach · Emoji</span><button class=\"ds-send\" aria-label=\"Send message\">↑</button></div></div>",
+      "css": ".ds-composer { background: var(--color-paper-raised); border: 1px solid var(--color-line); border-radius: var(--radius-lg); padding: .25rem; transition: border-color var(--duration-quick) var(--ease-smooth); } .ds-composer:focus-within { border-color: var(--color-accent); } .ds-composer textarea { background: transparent; border: 0; color: var(--color-ink); display: block; font: 400 .875rem/1.5 var(--font-sans); min-height: 2.75rem; padding: .5rem .75rem; resize: vertical; width: 100%; } .ds-composer textarea::placeholder { color: var(--color-ink-faint); } .ds-composer textarea:focus-visible { outline: none; } .ds-composer-tools { align-items: center; color: var(--color-ink-soft); display: flex; font: 400 .75rem/1rem var(--font-sans); gap: .5rem; justify-content: space-between; padding: .25rem; } .ds-send { background: var(--color-accent); border: 0; border-radius: var(--radius-md); color: var(--color-accent-ink); cursor: pointer; font: 600 1rem/1 var(--font-sans); height: 2.75rem; width: 2.75rem; } .ds-send:hover { opacity: .9; } .ds-send:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }"
+    },
+    {
+      "name": "Reaction chip",
+      "kind": "chip",
+      "refersTo": "reaction-chip",
+      "description": "Compact reaction with a count and selected state.",
+      "html": "<button class=\"ds-reaction\" aria-pressed=\"true\">👍 <span>4</span></button>",
+      "css": ".ds-reaction { align-items: center; background: var(--color-paper-raised); border: 1px solid var(--color-line); border-radius: 999px; color: var(--color-ink); cursor: pointer; display: inline-flex; font: 600 .75rem/1rem var(--font-sans); gap: .25rem; padding: .125rem .5rem; } .ds-reaction:hover { background: var(--color-paper); } .ds-reaction[aria-pressed=\"true\"] { background: color-mix(in oklab, var(--color-accent) 10%, var(--color-paper-raised)); border-color: var(--color-accent); } .ds-reaction:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }"
+    },
+    {
+      "name": "Overlay panel",
+      "kind": "card",
+      "refersTo": "overlay-panel",
+      "description": "Raised dialog or popover surface for temporary tasks.",
+      "html": "<section class=\"ds-overlay\"><strong>Create a channel</strong><p>Give the conversation a clear name.</p></section>",
+      "css": ".ds-overlay { background: var(--color-paper-raised); border: 1px solid var(--color-line); border-radius: var(--radius-xl); box-shadow: var(--shadow-pop); color: var(--color-ink); padding: 1.25rem; } .ds-overlay strong { font: 600 1rem/1.5rem var(--font-sans); } .ds-overlay p { color: var(--color-ink-soft); font: 400 .875rem/1.25rem var(--font-sans); margin: .25rem 0 0; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Warm Team Console",
+    "overview": "Orbit pairs a deep plum workspace shell with a warm paper conversation canvas. The split keeps navigation distinct from the work area. Burnt brick marks actions and important message states. The result feels warm, composed, practical, and collaborative. Restrained surfaces keep attention on messages, while active states make the work feel responsive.\n\nThe Orbit mark uses two elliptical paths around a central dot. It appears in the workspace rail and on the welcome image. The welcome image shows the mark on a paper desk scene. Keep that imagery in its existing welcome context. No visual anti-reference was specified.",
+    "keyCharacteristics": [
+      "Warm paper surfaces against a dark plum navigation shell.",
+      "Burnt-brick actions and compact message-state cues.",
+      "A dense, responsive conversation layout with a dockable thread pane.",
+      "Soft shadows reserved for floating or temporary surfaces."
+    ],
+    "rules": [
+      {
+        "name": "The Signal, Not Surface Rule",
+        "body": "Use Burnt Brick for actions and small state cues. Keep large working surfaces neutral.",
+        "section": "colors"
+      },
+      {
+        "name": "The Compact Hierarchy Rule",
+        "body": "Keep most conversation content at 0.875rem. Use larger sizes for pane and dialog titles, not for routine message text.",
+        "section": "typography"
+      },
+      {
+        "name": "The Single Pane Rule",
+        "body": "On narrow screens, keep navigation, conversation, and thread views as separate panes. Do not compress the desktop columns into a narrow three-column layout.",
+        "section": "layout"
+      },
+      {
+        "name": "The Docked-Flat Rule",
+        "body": "Use the pop shadow for floating surfaces. Keep docked panels flat and separated by borders.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** use Burnt Brick for primary actions and small state indicators.",
+      "**Do** preserve the plum navigation shell and warm paper conversation surfaces.",
+      "**Do** keep the message composer visually attached to the conversation pane.",
+      "**Do** show keyboard focus with a visible 2px outline.",
+      "**Do** honor reduced-motion preferences for animated surfaces."
+    ],
+    "donts": [
+      "**Don't** use the pop shadow on docked or resting content panels.",
+      "**Don't** turn the accent color into a large background surface.",
+      "**Don't** compress the narrow-screen interface into three persistent columns.",
+      "**Don't** use the seeded avatar colors as general status or action colors."
+    ]
+  }
+}

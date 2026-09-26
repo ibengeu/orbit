@@ -95,14 +95,14 @@ function CallDialog({ call }: { call: DemoCall }) {
             <h2 id="call-title" ref={heading} tabIndex={-1} className="truncate text-lg font-semibold outline-none">
               {call.kind === "video" ? "Video" : "Voice"} · {title}
             </h2>
-            <p className="text-sm text-ink-soft">Demo call — other participants are simulated.</p>
+            <p className="text-sm text-ink-soft">Other participants are simulated. They cannot hear or see you.</p>
           </div>
           <button
             type="button"
             className="inline-flex h-11 items-center rounded-md px-3 text-sm font-medium hover:bg-line focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             onClick={() => (call.phase === "lobby" ? useOrbit.getState().cancelLobby() : useOrbit.getState().minimizeCall())}
           >
-            {call.phase === "lobby" ? "Cancel" : "Hide"}
+            {call.phase === "lobby" ? "Cancel call" : "Minimize call"}
           </button>
         </header>
         {call.phase === "lobby" ? <Lobby call={call} others={others} /> : <ActiveCall call={call} others={others} />}
@@ -126,7 +126,7 @@ function Lobby({ call, others }: { call: DemoCall; others: string[] }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
       <p className="text-sm text-ink-soft">
-        Invitees: {others.map((id) => userById(id).name).join(", ") || "Just you"}. Simulated participants will not hear or see you.
+        Participants: {others.map((id) => userById(id).name).join(", ") || "Just you"}.
       </p>
       {call.kind === "video" ? (
         <div className="overflow-hidden rounded-lg bg-plum">
@@ -141,7 +141,7 @@ function Lobby({ call, others }: { call: DemoCall; others: string[] }) {
             <button type="button" className={buttonClass} onClick={() => void useOrbit.getState().enablePreview()}>
               {call.camera === "requesting" ? "Requesting camera…" : "Enable preview"}
             </button>
-            <p className="text-xs text-plum-muted">Device permission is requested only after you enable preview or join.</p>
+            <p className="text-xs text-plum-muted">Your browser may ask for camera access when you enable preview or join. It may ask for microphone access when you join.</p>
           </div>
         </div>
       ) : null}
@@ -165,7 +165,7 @@ function Lobby({ call, others }: { call: DemoCall; others: string[] }) {
           </button>
         ) : null}
         <button type="button" className={buttonClass} onClick={() => useOrbit.getState().cancelLobby()}>
-          Cancel
+          Cancel call
         </button>
       </div>
     </div>

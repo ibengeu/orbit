@@ -109,7 +109,7 @@ function StatusDialog() {
         useOrbit.getState().setStatusDialog(next);
       }}
       title="Set a status"
-      description="Teammates on this device will see it under your name."
+      description="Your status appears under your name in the profile menu."
     >
       <form
         className="mt-4 flex flex-col gap-3"

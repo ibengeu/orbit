@@ -85,9 +85,9 @@ export function LaterView({ messages }: { messages: Message[] }) {
 
   return (
     <section aria-label="Later" className="flex min-h-0 min-w-0 flex-1 flex-col bg-paper">
-      <PaneHeader title="Later" detail="Messages you saved on this device" />
+      <PaneHeader title="Later" detail="Messages you saved for later" />
       {saved.length === 0 ? (
-        <Empty title="Nothing saved" body="Open a message and choose Save for later. It will wait here.">
+        <Empty title="Nothing saved" body="Save a message from any conversation to find it here.">
           <button
             type="button"
             className="mt-4 inline-flex h-11 items-center rounded-md bg-accent px-4 text-sm font-semibold text-accent-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
@@ -110,7 +110,7 @@ export function LaterView({ messages }: { messages: Message[] }) {
               <li key={id} className="flex items-start gap-2 border-b border-line">
                 <button
                   type="button"
-                  aria-label="Open"
+                  aria-label={message ? `Open message from ${userById(message.authorId).name} in ${where}` : "Message unavailable"}
                   disabled={deleted || !message}
                   onClick={() => message && useOrbit.getState().focusMessage(message.id)}
                   className="flex min-w-0 flex-1 gap-3 px-4 py-3 text-left hover:bg-ink/5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent disabled:hover:bg-transparent"
@@ -128,7 +128,7 @@ export function LaterView({ messages }: { messages: Message[] }) {
                 <button
                   type="button"
                   className="mr-3 mt-3 shrink-0 rounded-md px-2 py-2 text-xs font-semibold text-ink-soft hover:bg-line focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                  aria-label="Remove"
+                  aria-label="Remove from Later"
                   onClick={() => useOrbit.getState().toggleSaved(id)}
                 >
                   Remove

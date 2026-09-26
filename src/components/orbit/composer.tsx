@@ -119,7 +119,7 @@ export function Composer({
               <Paperclip className="size-3.5 shrink-0" aria-hidden="true" />
               <span className="truncate">{file.name}</span>
               <span className="text-ink-faint tabular-nums">{formatBytes(file.size)}</span>
-              {fileUrl(file.id) ? null : <span className="text-ink-soft">No longer in this session</span>}
+              {fileUrl(file.id) ? null : <span className="text-ink-soft">File unavailable. Remove it and attach it again.</span>}
               <button
                 type="button"
                 className="rounded-sm p-1 text-ink-soft hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"

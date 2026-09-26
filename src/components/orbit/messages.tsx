@@ -364,7 +364,7 @@ function MessageRow({
                   }).catch(() => toast.error("Could not download the file."));
                 }}>Open</button>
               ) : (
-                <span className="text-xs text-ink-soft">This file is no longer available locally.</span>
+                <span className="text-xs text-ink-soft">This demo file is no longer available.</span>
               )}
             </p>
           );

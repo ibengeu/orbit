@@ -246,7 +246,7 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
         conversation.kind === "dm" ? { ...state.lastDm, [conversation.workspaceId]: id } : state.lastDm,
     });
     persist(get);
-    void setReadState(id, readAt).catch(() => set({ liveMessage: "Could not save the read position." }));
+    void setReadState(id, readAt).catch(() => set({ liveMessage: "Could not save where you left off in this conversation." }));
     const call = get().call;
     if (call?.phase === "active" && call.conversationId !== id) {
       set({ call: { ...call, surface: "minimized" } });
@@ -356,7 +356,7 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
     });
     persist(get);
     void (hadReaction ? removeReaction(messageId, emoji) : addReaction(messageId, emoji)).catch(() => {
-      set({ reactionOverrides: { ...get().reactionOverrides, [messageId]: message.reactions }, liveMessage: "Could not update the reaction." });
+      set({ reactionOverrides: { ...get().reactionOverrides, [messageId]: message.reactions }, liveMessage: "Could not save your reaction. Try again." });
       persist(get);
     });
   },
@@ -375,7 +375,7 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
     });
     persist(get);
     void (saved ? unsaveMessage(messageId) : saveMessage(messageId)).catch(() => {
-      set({ savedIds: state.savedIds, savedAt: state.savedAt, liveMessage: "Could not update Later." });
+      set({ savedIds: state.savedIds, savedAt: state.savedAt, liveMessage: `Could not ${saved ? "remove this message from" : "save this message to"} Later. Try again.` });
       persist(get);
     });
   },
@@ -395,7 +395,7 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
       const edited = { ...get().edited };
       if (previous) edited[messageId] = previous;
       else delete edited[messageId];
-      set({ edited, liveMessage: "Could not edit the message." });
+      set({ edited, liveMessage: "Could not save the message changes. Try again." });
       persist(get);
     });
   },
@@ -415,7 +415,7 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
     const ownerId = get().cacheOwnerId;
     void queueMessageWrite(messageId, () => deleteServerMessage(messageId)).catch(() => {
       if (get().cacheOwnerId !== ownerId) return;
-      set({ deletedIds: previous.deletedIds, savedIds: previous.savedIds, savedAt: previous.savedAt, liveMessage: "Could not delete the message." });
+      set({ deletedIds: previous.deletedIds, savedIds: previous.savedIds, savedAt: previous.savedAt, liveMessage: "Could not delete the message. Try again." });
       persist(get);
     });
   },
@@ -428,7 +428,7 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
     persist(get);
     if (message) void queueMessageWrite(messageId, () => updateMessage(messageId, message.body, undefined, true).then(() => undefined)).catch(() => {
       if (get().cacheOwnerId !== ownerId) return;
-      set({ deletedIds: previous, liveMessage: "Could not restore the message." });
+      set({ deletedIds: previous, liveMessage: "Could not restore the message. Try again." });
       persist(get);
     });
   },
@@ -573,7 +573,7 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
     const previous = get().presence;
     set({ presence });
     persist(get);
-    void updateProfile({ presence }).catch(() => { set({ presence: previous, liveMessage: "Could not save presence." }); persist(get); });
+    void updateProfile({ presence }).catch(() => { set({ presence: previous, liveMessage: "Could not update your availability. Try again." }); persist(get); });
   },
 
   setStatus: (status) => {
@@ -588,7 +588,7 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
     const previous = get().alwaysShowTime;
     set({ alwaysShowTime });
     persist(get);
-    void updatePreferences({ alwaysShowTime }).catch(() => { set({ alwaysShowTime: previous, liveMessage: "Could not save preferences." }); persist(get); });
+    void updatePreferences({ alwaysShowTime }).catch(() => { set({ alwaysShowTime: previous, liveMessage: "Could not save the message time setting. Try again." }); persist(get); });
   },
 
   createWorkspace: async (name) => {
@@ -635,7 +635,7 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
     const existing = conversationsOf(state.extraConversations).some(
       (item) => item.workspaceId === state.workspaceId && item.kind === "channel" && item.name === slug,
     );
-    if (existing) return "That channel already exists here.";
+    if (existing) return "A channel with this name already exists in this workspace.";
     let createdId: string;
     try {
       const created = await createServerConversation({

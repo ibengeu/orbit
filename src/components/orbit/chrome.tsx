@@ -254,7 +254,7 @@ export function Sidebar({ messages, onNavigate }: { messages: Message[]; onNavig
           onToggle={() => useOrbit.getState().toggleSection("dms")}
         >
           {dms.length === 0 ? (
-            <p className="px-2 py-2 text-sm text-plum-faint">No direct messages yet.</p>
+            <p className="px-2 py-2 text-sm text-plum-faint">Use Search above to start a direct message.</p>
           ) : (
             dms.map((dm) => (
               <ConversationButton

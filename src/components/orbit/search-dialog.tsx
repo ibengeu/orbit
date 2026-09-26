@@ -107,7 +107,7 @@ export function SearchDialog({ messages }: { messages: Message[] }) {
       ) : null}
       <Command.List className="p-2">
         {nothing ? (
-          <div className="px-3 py-8 text-center text-sm text-ink-soft">No results for “{query.trim()}”</div>
+          <div className="px-3 py-8 text-center text-sm text-ink-soft">No results for “{query.trim()}”. Try another search term.</div>
         ) : null}
         {!q ? (
           <Command.Group heading="Recent">
