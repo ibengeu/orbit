@@ -142,13 +142,15 @@ function authPopupPlugin(): Plugin {
   };
 }
 
-// `0.0.0.0:8080` is the live-preview contract — don't change host/port.
+// Prefer the live-preview port. startup.sh sets APP_PORT when 8080 is busy.
 // The dev server starts once `src/router.tsx` and `src/routes/` exist — see
 // AGENTS.md § "First scaffold".
+const DEV_PORT = Number(process.env.APP_PORT) || 8080;
+
 export default defineConfig(({ command, isPreview }) => ({
   server: {
     host: "0.0.0.0",
-    port: 8080,
+    port: DEV_PORT,
     strictPort: true,
   },
   preview: {

@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { activityItems, assembleMessages, conversationById, conversationsOf, initialsFor, memberIds, slugify, unreadMeta } from "@/lib/orbit/derive";
+import { workspaceNameError } from "@/lib/orbit/compose";
+import { activityItems, assembleMessages, conversationById, conversationsOf, initialsFor, memberIds, slugify, unreadMeta, workspacesOf } from "@/lib/orbit/derive";
 import { captureMedia, explainMediaError, localTracks, setTrackEnabled, stopCallTracks } from "@/lib/orbit/media";
 import { INITIAL_LAST_READ, STORAGE_KEY, YOU } from "@/lib/orbit/seed";
 import type { Attachment, CallHistoryItem, CallKind, Conversation, DemoCall, Message, PersistedOrbit, Presence, View, Workspace } from "@/lib/orbit/types";
@@ -41,6 +42,7 @@ type OrbitStore = PersistedOrbit & {
   closeThread: () => void;
   highlight: (messageId: string) => void;
   focusMessage: (messageId: string) => void;
+  openDirectMessage: (userId: string) => void;
   setMenu: (menu: "workspace" | "profile" | null) => void;
   openSearch: (scopeId?: string | null) => void;
   setSearchOpen: (open: boolean) => void;
@@ -203,10 +205,23 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
           conversationId: saved.conversationId ?? base.conversationId,
         }
       : base;
-    if (next.workspaceId !== "orbit") {
+    const workspaces = workspacesOf(next.extraWorkspaces);
+    const conversations = conversationsOf(next.extraConversations);
+    if (!workspaces.some((workspace) => workspace.id === next.workspaceId)) {
       next.workspaceId = "orbit";
       next.conversationId = next.lastChannel.orbit || "general";
       next.threadParentId = null;
+    } else if (next.conversationId) {
+      const selected = conversationById(conversations, next.conversationId);
+      if (!selected || selected.workspaceId !== next.workspaceId) {
+        const inWorkspace = conversations.filter((item) => item.workspaceId === next.workspaceId);
+        const fallback =
+          inWorkspace.find((item) => item.kind === "channel" && item.id === next.lastChannel[next.workspaceId]) ??
+          inWorkspace.find((item) => item.kind === "channel") ??
+          inWorkspace[0];
+        next.conversationId = fallback?.id ?? "";
+        next.threadParentId = null;
+      }
     }
     set({ ...next, hydrated: true });
     if (typeof location !== "undefined" && location.hash.length > 1) {
@@ -459,6 +474,34 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
     persist(get);
   },
 
+  openDirectMessage: (userId) => {
+    if (userId === YOU) return;
+    const state = get();
+    const conversations = conversationsOf(state.extraConversations);
+    const existing = conversations.find(
+      (conversation) =>
+        conversation.workspaceId === state.workspaceId &&
+        conversation.kind === "dm" &&
+        conversation.participantIds.length === 2 &&
+        conversation.participantIds.includes(YOU) &&
+        conversation.participantIds.includes(userId),
+    );
+    if (existing) {
+      get().openConversation(existing.id);
+      return;
+    }
+
+    const conversation: Conversation = {
+      kind: "dm",
+      id: `dm-${state.workspaceId}-${userId}-${crypto.randomUUID()}`,
+      workspaceId: state.workspaceId,
+      participantIds: [YOU, userId],
+    };
+    set({ extraConversations: [...state.extraConversations, conversation] });
+    persist(get);
+    get().openConversation(conversation.id);
+  },
+
   openSearch: (scopeId = null) => {
     const current = get();
     const searchReturn = current.searchOpen
@@ -504,9 +547,13 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
   },
 
   createWorkspace: (name) => {
-    const trimmed = name.trim();
-    if (!trimmed) return "Name the workspace first.";
     const state = get();
+    const error = workspaceNameError(
+      name,
+      workspacesOf(state.extraWorkspaces).map((workspace) => workspace.name),
+    );
+    if (error) return error;
+    const trimmed = name.trim();
     const id = `ws-${slugify(trimmed) || "team"}-${Math.random().toString(36).slice(2, 6)}`;
     const workspace: Workspace = { id, name: trimmed, initials: initialsFor(trimmed) };
     const channelId = `${id}-general`;

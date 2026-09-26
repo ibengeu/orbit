@@ -8,7 +8,7 @@ import { ActivityView, LaterView } from "@/components/orbit/lists";
 import { SearchDialog } from "@/components/orbit/search-dialog";
 import { ThreadPane } from "@/components/orbit/thread-pane";
 import { Welcome } from "@/components/orbit/welcome";
-import { assembleMessages, conversationById, conversationTitle, conversationsOf } from "@/lib/orbit/derive";
+import { assembleMessages, conversationById, conversationTitle, conversationsOf, workspacesOf } from "@/lib/orbit/derive";
 import { clearSession, readSession } from "@/lib/orbit/session";
 import { useOrbit } from "@/lib/orbit/store";
 
@@ -55,6 +55,8 @@ function enterDemo() {
 }
 
 function AuthedApp() {
+  const hydrated = useOrbit((state) => state.hydrated);
+
   useEffect(() => {
     useOrbit.getState().hydrate();
   }, []);
@@ -101,6 +103,14 @@ function AuthedApp() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  if (!hydrated) {
+    return (
+      <div role="status" aria-live="polite" className="flex h-dvh items-center justify-center bg-paper text-sm text-ink-soft">
+        Loading workspace…
+      </div>
+    );
+  }
+
   return <OrbitShell />;
 }
 
@@ -112,7 +122,9 @@ function OrbitShell() {
   const reactionOverrides = useOrbit((state) => state.reactionOverrides);
   const view = useOrbit((state) => state.view);
   const conversationId = useOrbit((state) => state.conversationId);
+  const workspaceId = useOrbit((state) => state.workspaceId);
   const extra = useOrbit((state) => state.extraConversations);
+  const extraWorkspaces = useOrbit((state) => state.extraWorkspaces);
   const threadParentId = useOrbit((state) => state.threadParentId);
 
   const messages = useMemo(
@@ -122,13 +134,14 @@ function OrbitShell() {
 
   useEffect(() => {
     const conversation = conversationById(conversationsOf(extra), conversationId);
+    const workspaceName = workspacesOf(extraWorkspaces).find((item) => item.id === workspaceId)?.name ?? "Orbit";
     const title = conversation
       ? conversation.kind === "channel"
-        ? `#${conversationTitle(conversation)} · Orbit`
-        : `${conversationTitle(conversation)} · Orbit`
-      : "Orbit";
+        ? `#${conversationTitle(conversation)} · ${workspaceName}`
+        : `${conversationTitle(conversation)} · ${workspaceName}`
+      : workspaceName;
     document.title = title;
-  }, [conversationId, extra]);
+  }, [conversationId, extra, extraWorkspaces, workspaceId]);
 
   return (
     <div id="orbit-shell" className="flex h-dvh overflow-hidden bg-paper text-ink">

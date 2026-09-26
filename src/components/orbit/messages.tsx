@@ -106,8 +106,8 @@ export function MessageList({
       <div className="mx-auto mt-auto flex w-full max-w-3xl flex-col py-3">
         {days.map((day) => (
           <section key={day.key} aria-label={day.label}>
-            <h3 className="sticky top-0 z-10 mx-4 my-2 bg-paper/95 py-1 text-center text-xs font-semibold tracking-wide text-ink-faint">
-              <span className="rounded-full border border-line bg-paper-raised px-3 py-1">{day.label}</span>
+            <h3 className="pointer-events-none sticky top-0 z-10 mx-4 my-2 bg-paper/95 py-1 text-center text-xs font-semibold tracking-wide text-ink-faint">
+              <span className="pointer-events-auto rounded-full border border-line bg-paper-raised px-3 py-1">{day.label}</span>
             </h3>
             {groupMessages(day.messages).map((group) =>
               group.messages[0]?.system ? (

@@ -6,6 +6,7 @@ export function OrbitDialogs() {
   return (
     <>
       <ChannelDialog />
+      <WorkspaceDialog />
       <StatusDialog />
       <PrefsDialog />
     </>
@@ -46,8 +47,51 @@ function ChannelDialog() {
       >
         <Field id="channel-name" label="Channel name" value={name} onChange={setName} />
         <Field id="channel-description" label="Description" value={description} onChange={setDescription} />
-        {error ? <p className="text-sm text-danger">{error}</p> : null}
+        {error ? (
+          <p role="alert" className="text-sm text-danger">
+            {error}
+          </p>
+        ) : null}
         <Submit label="Create channel" />
+      </form>
+    </Shell>
+  );
+}
+
+function WorkspaceDialog() {
+  const open = useOrbit((state) => state.workspaceDialog);
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <Shell
+      open={open}
+      onOpenChange={(next) => {
+        useOrbit.getState().setWorkspaceDialog(next);
+        if (!next) {
+          setName("");
+          setError(null);
+        }
+      }}
+      title="Create a workspace"
+      description="It starts with a #general channel and stays on this device."
+    >
+      <form
+        className="mt-4 flex flex-col gap-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const result = useOrbit.getState().createWorkspace(name);
+          setError(result);
+          if (!result) setName("");
+        }}
+      >
+        <Field id="workspace-name" label="Workspace name" value={name} onChange={setName} />
+        {error ? (
+          <p role="alert" className="text-sm text-danger">
+            {error}
+          </p>
+        ) : null}
+        <Submit label="Create workspace" />
       </form>
     </Shell>
   );
@@ -122,7 +166,7 @@ function Shell({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-ink/40" />
-        <Dialog.Content className="orbit-pop fixed inset-x-4 top-24 z-50 mx-auto w-full max-w-md rounded-xl border border-line bg-paper-raised p-5 text-ink shadow-pop outline-none">
+        <Dialog.Content className="orbit-pop fixed inset-x-4 top-24 z-50 mx-auto w-auto max-w-md rounded-xl border border-line bg-paper-raised p-5 text-ink shadow-pop outline-none">
           <Dialog.Title className="text-lg font-semibold text-balance">{title}</Dialog.Title>
           <Dialog.Description className="mt-1 text-sm text-ink-soft">{description}</Dialog.Description>
           {children}

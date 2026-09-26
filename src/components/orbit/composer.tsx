@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useRef, useState, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Bold, Code, Italic, Link2, Paperclip, Send, Smile, X } from "lucide-react";
+import { markdownLink } from "@/lib/orbit/compose";
 import { formatBytes } from "@/lib/orbit/derive";
 import { forgetFile, rememberFile, fileUrl } from "@/lib/orbit/media";
 import { EMOJIS } from "@/lib/orbit/seed";
@@ -40,6 +41,7 @@ export function Composer({
   const [linkUrl, setLinkUrl] = useState("https://");
   const [formatOpen, setFormatOpen] = useState(true);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [linkError, setLinkError] = useState<string | null>(null);
   const liveFile = attachments.some((file) => fileUrl(file.id));
   const inputId = fieldId ?? draftKey;
   const canSend = (draft.trim().length > 0 || liveFile) && draft.length <= MAX_BODY;
@@ -236,7 +238,13 @@ export function Composer({
         <ToolbarButton label="Code" onClick={() => wrap("`", "`")}>
           <Code className="size-4" />
         </ToolbarButton>
-        <Popover.Root open={linkOpen} onOpenChange={setLinkOpen}>
+        <Popover.Root
+          open={linkOpen}
+          onOpenChange={(open) => {
+            setLinkOpen(open);
+            if (!open) setLinkError(null);
+          }}
+        >
           <Popover.Trigger asChild>
             <ToolbarButton label="Insert link">
               <Link2 className="size-4" />
@@ -251,15 +259,18 @@ export function Composer({
               <form
                 onSubmit={(event) => {
                   event.preventDefault();
-                  const url = linkUrl.trim();
-                  if (!/^https?:\/\//i.test(url)) return;
                   const body = useOrbit.getState().drafts[draftKey] ?? "";
                   const { start, end } = range();
                   const selected = body.slice(start, end);
-                  const markdown = selected ? `[${selected}](${url})` : `[](${url})`;
-                  const next = body.slice(0, start) + markdown + body.slice(end);
-                  const cursor = selected ? start + markdown.length : start + 1;
+                  const result = markdownLink(selected, linkUrl);
+                  if ("error" in result) {
+                    setLinkError(result.error);
+                    return;
+                  }
+                  const next = body.slice(0, start) + result.markdown + body.slice(end);
+                  const cursor = start + result.markdown.length;
                   write(next, [cursor, cursor]);
+                  setLinkError(null);
                   setLinkOpen(false);
                   setLinkUrl("https://");
                 }}
@@ -270,9 +281,19 @@ export function Composer({
                 <input
                   id={`${draftKey}-link`}
                   value={linkUrl}
-                  onChange={(event) => setLinkUrl(event.target.value)}
+                  onChange={(event) => {
+                    setLinkUrl(event.target.value);
+                    setLinkError(null);
+                  }}
                   className="mt-1 w-full rounded-md border border-line bg-paper px-2 py-2 text-sm outline-none focus-visible:border-accent"
+                  aria-invalid={linkError ? true : undefined}
+                  aria-describedby={linkError ? `${draftKey}-link-error` : undefined}
                 />
+                {linkError ? (
+                  <p id={`${draftKey}-link-error`} role="alert" className="mt-1 text-xs text-danger">
+                    {linkError}
+                  </p>
+                ) : null}
                 <button
                   type="submit"
                   className="mt-2 rounded-md bg-accent px-3 py-2 text-sm font-semibold text-accent-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"

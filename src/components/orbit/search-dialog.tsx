@@ -6,6 +6,7 @@ import {
   conversationsOf,
   snippet,
   userById,
+  workspacesOf,
 } from "@/lib/orbit/derive";
 import { useOrbit } from "@/lib/orbit/store";
 import { YOU } from "@/lib/orbit/seed";
@@ -18,8 +19,11 @@ export function SearchDialog({ messages }: { messages: Message[] }) {
   const scopeId = useOrbit((state) => state.searchScopeId);
   const recentIds = useOrbit((state) => state.recentIds);
   const conversationId = useOrbit((state) => state.conversationId);
+  const workspaceId = useOrbit((state) => state.workspaceId);
   const extraConversations = useOrbit((state) => state.extraConversations);
-  const conversations = conversationsOf(extraConversations).filter((item) => item.workspaceId === "orbit");
+  const extraWorkspaces = useOrbit((state) => state.extraWorkspaces);
+  const workspaceName = workspacesOf(extraWorkspaces).find((item) => item.id === workspaceId)?.name ?? "workspace";
+  const conversations = conversationsOf(extraConversations).filter((item) => item.workspaceId === workspaceId);
   const scope = conversations.find((item) => item.id === scopeId) ?? null;
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -67,7 +71,7 @@ export function SearchDialog({ messages }: { messages: Message[] }) {
     <Command.Dialog
       open={open}
       onOpenChange={useOrbit.getState().setSearchOpen}
-      label="Search Orbit"
+      label={`Search ${workspaceName}`}
       shouldFilter={false}
       vimBindings={false}
       overlayClassName="fixed inset-0 z-40 bg-ink/40"
@@ -77,7 +81,7 @@ export function SearchDialog({ messages }: { messages: Message[] }) {
         <Command.Input
           value={query}
           onValueChange={setQuery}
-          placeholder={scope ? `Search ${scopeName(scope)}` : "Search Orbit"}
+          placeholder={scope ? `Search ${scopeName(scope)}` : `Search ${workspaceName}`}
           className="min-w-0 flex-1 bg-transparent px-4 py-3 text-sm outline-none placeholder:text-ink-faint"
         />
         <button
@@ -97,7 +101,7 @@ export function SearchDialog({ messages }: { messages: Message[] }) {
             onClick={() => useOrbit.getState().openSearch(null)}
           >
             <X className="size-3.5" aria-hidden="true" />
-            Search all of Orbit
+            Search all of {workspaceName}
           </button>
         </div>
       ) : null}
@@ -134,6 +138,7 @@ export function SearchDialog({ messages }: { messages: Message[] }) {
                 onSelect={() => {
                   const dm = dmFor(conversations, person.id);
                   if (dm) useOrbit.getState().openConversation(dm.id);
+                  else useOrbit.getState().openDirectMessage(person.id);
                   useOrbit.getState().setSearchOpen(false);
                 }}
                 className="mt-1 flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 text-sm text-ink data-[selected=true]:bg-line"
