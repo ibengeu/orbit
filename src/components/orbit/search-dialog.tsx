@@ -22,31 +22,44 @@ export function SearchDialog({ messages }: { messages: Message[] }) {
   const conversations = conversationsOf(extraConversations).filter((item) => item.workspaceId === "orbit");
   const scope = conversations.find((item) => item.id === scopeId) ?? null;
   const [query, setQuery] = useState("");
+  const [debounced, setDebounced] = useState("");
   const [more, setMore] = useState({ channels: false, people: false, messages: false });
 
   useEffect(() => {
-    if (!open) setQuery("");
+    if (!open) {
+      setQuery("");
+      setDebounced("");
+    }
   }, [open]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(query), 200);
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
   useEffect(() => {
     setMore({ channels: false, people: false, messages: false });
   }, [query, scopeId]);
 
-  const q = query.trim().toLowerCase();
+  const q = debounced.trim().toLowerCase();
   const channels = conversations.filter((item) => item.kind === "channel");
   const people = peopleIn(conversations);
-  const channelHits = q ? channels.filter((item) => includes(item.name, q) || includes(item.description, q)) : [];
-  const peopleHits = q
+  const channelHits = (q ? channels.filter((item) => includes(item.name, q) || includes(item.description, q)) : []).sort(
+    (a, b) => rankText(`${a.name} ${a.description}`, q) - rankText(`${b.name} ${b.description}`, q),
+  );
+  const peopleHits = (q
     ? people.filter((person) => includes(person.name, q) || includes(person.handle, q) || includes(person.title, q))
-    : [];
-  const messageHits = q
+    : []
+  ).sort((a, b) => rankText(a.name, q) - rankText(b.name, q));
+  const messageHits = (q
     ? messages.filter((message) => {
         if (scope && message.conversationId !== scope.id) return false;
         if (!conversations.some((item) => item.id === message.conversationId)) return false;
         const where = whereLabel(conversations, message.conversationId);
         return includes(message.body, q) || includes(userById(message.authorId).name, q) || includes(where, q);
       })
-    : [];
+    : []
+  ).sort((a, b) => rankText(a.body, q) - rankText(b.body, q) || b.createdAt.localeCompare(a.createdAt));
   const recent = recentConversations(conversations, recentIds, conversationId);
   const nothing = Boolean(q) && channelHits.length + peopleHits.length + messageHits.length === 0;
 
@@ -155,7 +168,9 @@ export function SearchDialog({ messages }: { messages: Message[] }) {
                     <span className="block truncate font-medium">
                       {userById(message.authorId).name} · {where}
                     </span>
-                    <span className="block truncate text-ink-soft">{snippet(message.body)}</span>
+                    <span className="block truncate text-ink-soft">
+                      <Highlight text={snippet(message.body)} query={q} />
+                    </span>
                   </span>
                 </Command.Item>
               );
@@ -217,6 +232,28 @@ function ConversationResult({ conversation }: { conversation: Conversation }) {
       <span className="truncate">{label}</span>
     </Command.Item>
   );
+}
+
+function Highlight({ text, query }: { text: string; query: string }) {
+  const needle = query.trim();
+  const index = needle ? text.toLowerCase().indexOf(needle.toLowerCase()) : -1;
+  if (index < 0) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, index)}
+      <mark className="bg-accent/20 text-inherit">{text.slice(index, index + needle.length)}</mark>
+      {text.slice(index + needle.length)}
+    </>
+  );
+}
+
+function rankText(text: string, query: string) {
+  const value = text.toLowerCase();
+  if (!query) return 3;
+  if (value === query) return 0;
+  if (value.startsWith(query)) return 1;
+  if (value.includes(query)) return 2;
+  return 3;
 }
 
 function includes(value: string, query: string) {

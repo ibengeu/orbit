@@ -2,12 +2,14 @@ import { forwardRef, useEffect, useRef, useState, type ComponentPropsWithoutRef,
 import * as Popover from "@radix-ui/react-popover";
 import { Bold, Code, Italic, Link2, Paperclip, Send, Smile, X } from "lucide-react";
 import { formatBytes } from "@/lib/orbit/derive";
+import { forgetFile, rememberFile, fileUrl } from "@/lib/orbit/media";
 import { EMOJIS } from "@/lib/orbit/seed";
 import { useOrbit } from "@/lib/orbit/store";
 import type { Attachment } from "@/lib/orbit/types";
 import { cn } from "@/lib/utils";
 
 const MAX_HEIGHT = 192;
+const MAX_BODY = 10000;
 const NO_FILES: Attachment[] = [];
 
 export function Composer({
@@ -36,8 +38,11 @@ export function Composer({
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("https://");
+  const [formatOpen, setFormatOpen] = useState(true);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const liveFile = attachments.some((file) => fileUrl(file.id));
   const inputId = fieldId ?? draftKey;
-  const canSend = draft.trim().length > 0 || attachments.length > 0;
+  const canSend = (draft.trim().length > 0 || liveFile) && draft.length <= MAX_BODY;
 
   useEffect(() => {
     const node = field.current;
@@ -89,14 +94,19 @@ export function Composer({
   }
 
   function send() {
-    const body = useOrbit.getState().drafts[draftKey] ?? "";
-    const files = useOrbit.getState().draftAttachments[draftKey] ?? [];
-    if (!body.trim() && files.length === 0) return;
+    const raw = useOrbit.getState().drafts[draftKey] ?? "";
+    const body = raw.replace(/^(?:[ \t]*\r?\n)+/, "").replace(/(?:\r?\n[ \t]*)+$/, "");
+    const files = (useOrbit.getState().draftAttachments[draftKey] ?? []).filter((file) => fileUrl(file.id));
+    if ((!body.trim() && files.length === 0) || raw.length > MAX_BODY) return;
     sendMessage({ conversationId, body, parentId, attachments: files, draftKey });
   }
 
   return (
     <div className="rounded-lg border border-line bg-paper-raised focus-within:border-accent">
+      {fileError ? <p className="px-3 pt-2 text-xs text-danger">{fileError}</p> : null}
+      {draft.length >= 9000 ? (
+        <p className="px-3 pt-2 text-xs text-ink-soft">{draft.length} / {MAX_BODY}</p>
+      ) : null}
       {attachments.length > 0 ? (
         <ul className="flex flex-wrap gap-2 px-3 pt-3" aria-label="Attachments">
           {attachments.map((file) => (
@@ -107,11 +117,15 @@ export function Composer({
               <Paperclip className="size-3.5 shrink-0" aria-hidden="true" />
               <span className="truncate">{file.name}</span>
               <span className="text-ink-faint tabular-nums">{formatBytes(file.size)}</span>
+              {fileUrl(file.id) ? null : <span className="text-ink-soft">No longer in this session</span>}
               <button
                 type="button"
                 className="rounded-sm p-1 text-ink-soft hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                 aria-label={`Remove ${file.name}`}
-                onClick={() => setDraftAttachments(draftKey, attachments.filter((item) => item.id !== file.id))}
+                onClick={() => {
+                  forgetFile(file.id);
+                  setDraftAttachments(draftKey, attachments.filter((item) => item.id !== file.id));
+                }}
               >
                 <X className="size-3.5" />
               </button>
@@ -133,7 +147,8 @@ export function Composer({
         onKeyUp={remember}
         onBlur={remember}
         onChange={(event) => {
-          setDraft(draftKey, event.target.value);
+          const value = event.target.value.slice(0, MAX_BODY);
+          setDraft(draftKey, value);
           const node = event.target;
           node.style.height = "auto";
           node.style.height = `${Math.min(node.scrollHeight, MAX_HEIGHT)}px`;
@@ -182,21 +197,36 @@ export function Composer({
         <input
           ref={fileRef}
           type="file"
-          multiple
+          accept="image/*,application/pdf,text/plain"
           tabIndex={-1}
           aria-hidden="true"
           className="sr-only"
           onChange={(event) => {
-            const files = [...(event.target.files ?? [])];
+            const file = event.target.files?.[0];
             event.target.value = "";
-            if (files.length === 0) return;
+            if (!file) return;
+            const allowed = file.type.startsWith("image/") || file.type === "application/pdf" || file.type === "text/plain";
+            if (!allowed || file.size > 10 * 1024 * 1024) {
+              const message = !allowed
+                ? "Choose an image, PDF, or plain text file."
+                : "That file is larger than 10 MB.";
+              setFileError(message);
+              useOrbit.getState().announce(message);
+              return;
+            }
+            setFileError(null);
             const current = useOrbit.getState().draftAttachments[draftKey] ?? [];
-            setDraftAttachments(draftKey, [
-              ...current,
-              ...files.map((file) => ({ id: crypto.randomUUID(), name: file.name, size: file.size })),
-            ]);
+            current.forEach((item) => forgetFile(item.id));
+            const id = crypto.randomUUID();
+            rememberFile(id, file);
+            setDraftAttachments(draftKey, [{ id, name: file.name, size: file.size }]);
           }}
         />
+        <ToolbarButton label={formatOpen ? "Hide formatting" : "Show formatting"} aria-pressed={formatOpen} onClick={() => setFormatOpen((value) => !value)}>
+          <Bold className="size-4" />
+        </ToolbarButton>
+        {formatOpen ? (
+          <>
         <ToolbarButton label="Bold" onClick={() => wrap("**", "**")}>
           <Bold className="size-4" />
         </ToolbarButton>
@@ -253,6 +283,8 @@ export function Composer({
             </Popover.Content>
           </Popover.Portal>
         </Popover.Root>
+          </>
+        ) : null}
         <span className="ml-auto hidden text-xs text-ink-faint sm:inline">Shift + Enter for a new line</span>
         <button
           type="button"

@@ -1,16 +1,60 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Toaster } from "sonner";
-import { CallReturnBar, CallRuntime } from "@/components/orbit/call-stage";
+import { CallReturnBar, CallRuntime, CallSurfaces } from "@/components/orbit/call-stage";
 import { MobileNav, Sidebar, WorkspaceRail } from "@/components/orbit/chrome";
 import { ConversationPane } from "@/components/orbit/conversation";
 import { OrbitDialogs } from "@/components/orbit/dialogs";
 import { ActivityView, LaterView } from "@/components/orbit/lists";
 import { SearchDialog } from "@/components/orbit/search-dialog";
 import { ThreadPane } from "@/components/orbit/thread-pane";
+import { Welcome } from "@/components/orbit/welcome";
 import { assembleMessages, conversationById, conversationTitle, conversationsOf } from "@/lib/orbit/derive";
+import { clearSession, readSession } from "@/lib/orbit/session";
 import { useOrbit } from "@/lib/orbit/store";
 
+const RETURN_KEY = "orbit:return";
+
 export function OrbitApp() {
+  const [ready, setReady] = useState(false);
+  const [authed, setAuthed] = useState(false);
+
+  useEffect(() => {
+    const existing = readSession();
+    if (!existing && location.hash.length > 1) sessionStorage.setItem(RETURN_KEY, location.hash);
+    if (existing) enterDemo();
+    setAuthed(Boolean(existing));
+    setReady(true);
+    const onSignOut = () => {
+      clearSession();
+      history.replaceState(null, "", location.pathname);
+      setAuthed(false);
+    };
+    window.addEventListener("orbit-signout", onSignOut);
+    return () => window.removeEventListener("orbit-signout", onSignOut);
+  }, []);
+
+  if (!ready) return null;
+  if (!authed) {
+    return (
+      <Welcome
+        onEnter={() => {
+          enterDemo();
+          setAuthed(true);
+        }}
+      />
+    );
+  }
+  return <AuthedApp />;
+}
+
+function enterDemo() {
+  const pending = sessionStorage.getItem(RETURN_KEY);
+  if (pending && location.hash.length <= 1) location.hash = pending;
+  sessionStorage.removeItem(RETURN_KEY);
+  useOrbit.getState().hydrate();
+}
+
+function AuthedApp() {
   useEffect(() => {
     useOrbit.getState().hydrate();
   }, []);
@@ -45,12 +89,13 @@ export function OrbitApp() {
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        const state = useOrbit.getState();
-        if (state.searchOpen) state.setSearchOpen(false);
-        else state.openSearch(null);
-      }
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") return;
+      const target = event.target;
+      if (target instanceof HTMLElement && target.closest("input, textarea, [contenteditable='true']")) return;
+      event.preventDefault();
+      const state = useOrbit.getState();
+      if (state.searchOpen) state.setSearchOpen(false);
+      else state.openSearch(null);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -60,6 +105,7 @@ export function OrbitApp() {
 }
 
 function OrbitShell() {
+  const liveMessage = useOrbit((state) => state.liveMessage);
   const createdMessages = useOrbit((state) => state.createdMessages);
   const edited = useOrbit((state) => state.edited);
   const deletedIds = useOrbit((state) => state.deletedIds);
@@ -101,6 +147,7 @@ function OrbitShell() {
       <main className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <CallRuntime />
         <CallReturnBar />
+        <CallSurfaces />
         <div className="relative flex min-h-0 min-w-0 flex-1">
         {view === "activity" ? <ActivityView messages={messages} /> : null}
         {view === "later" ? <LaterView messages={messages} /> : null}
@@ -120,6 +167,7 @@ function OrbitShell() {
       <SearchDialog messages={messages} />
       <OrbitDialogs />
       <Toaster position="bottom-center" />
+      <p className="sr-only" aria-live="polite">{liveMessage}</p>
     </div>
   );
 }

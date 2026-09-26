@@ -25,7 +25,7 @@
   --color-away: #8a5a12;
   --color-danger: #8e2e28;
 
-  --color-avatar-rowan: #8f3d32;
+  --color-avatar-alex: #8f3d32;
   --color-avatar-priya: #2f6f62;
   --color-avatar-noah: #6b5a2e;
   --color-avatar-jules: #3d5270;
@@ -41,7 +41,8 @@
   --radius-lg: 0.875rem;
   --radius-xl: 1.25rem;
 
-  --spacing-rail: 4.5rem;
+  --breakpoint-xl: 75rem;
+  --spacing-rail: 4rem;
   --spacing-sidebar: 16.25rem;
   --spacing-sidebar-sm: 14rem;
   --spacing-sidebar-xs: 13rem;

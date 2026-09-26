@@ -938,7 +938,20 @@ var MenuRadioItem = /* @__PURE__ */ import_react.forwardRef(/* @__PURE__ */ __na
 		})
 	});
 }, "MenuRadioItem"));
-var [ItemIndicatorProvider, useItemIndicatorContext] = createMenuContext("MenuItemIndicator", { checked: false });
+var ITEM_INDICATOR_NAME = "MenuItemIndicator";
+var [ItemIndicatorProvider, useItemIndicatorContext] = createMenuContext(ITEM_INDICATOR_NAME, { checked: false });
+var MenuItemIndicator = /* @__PURE__ */ import_react.forwardRef(/* @__PURE__ */ __name$1(function MenuItemIndicator2(props, forwardedRef) {
+	const { __scopeMenu, forceMount, ...itemIndicatorProps } = props;
+	const indicatorContext = useItemIndicatorContext(ITEM_INDICATOR_NAME, __scopeMenu);
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Presence, {
+		present: forceMount || isIndeterminate(indicatorContext.checked) || indicatorContext.checked === true,
+		children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Primitive.span, {
+			...itemIndicatorProps,
+			ref: forwardedRef,
+			"data-state": getCheckedState(indicatorContext.checked)
+		})
+	});
+}, "MenuItemIndicator"));
 var MenuSeparator = /* @__PURE__ */ import_react.forwardRef(/* @__PURE__ */ __name$1(function MenuSeparator2(props, forwardedRef) {
 	const { __scopeMenu, ...separatorProps } = props;
 	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Primitive.div, {
@@ -1017,6 +1030,7 @@ var Content2$1 = MenuContent;
 var Item2$1 = MenuItem;
 var RadioGroup = MenuRadioGroup;
 var RadioItem = MenuRadioItem;
+var ItemIndicator = MenuItemIndicator;
 var Separator = MenuSeparator;
 //#endregion
 //#region node_modules/@radix-ui/react-dropdown-menu/dist/index.mjs
@@ -1165,6 +1179,15 @@ var DropdownMenuRadioItem = /* @__PURE__ */ import_react.forwardRef(/* @__PURE__
 		ref: forwardedRef
 	});
 }, "DropdownMenuRadioItem"));
+var DropdownMenuItemIndicator = /* @__PURE__ */ import_react.forwardRef(/* @__PURE__ */ __name(function DropdownMenuItemIndicator2(props, forwardedRef) {
+	const { __scopeDropdownMenu, ...itemIndicatorProps } = props;
+	const menuScope = useMenuScope(__scopeDropdownMenu);
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(ItemIndicator, {
+		...menuScope,
+		...itemIndicatorProps,
+		ref: forwardedRef
+	});
+}, "DropdownMenuItemIndicator"));
 var DropdownMenuSeparator = /* @__PURE__ */ import_react.forwardRef(/* @__PURE__ */ __name(function DropdownMenuSeparator2(props, forwardedRef) {
 	const { __scopeDropdownMenu, ...separatorProps } = props;
 	const menuScope = useMenuScope(__scopeDropdownMenu);
@@ -1181,6 +1204,7 @@ var Content2 = DropdownMenuContent;
 var Item2 = DropdownMenuItem;
 var RadioGroup2 = DropdownMenuRadioGroup;
 var RadioItem2 = DropdownMenuRadioItem;
+var ItemIndicator2 = DropdownMenuItemIndicator;
 var Separator2 = DropdownMenuSeparator;
 //#endregion
-export { RadioItem2 as a, Trigger as c, Root2$1 as d, createPopperScope as f, RadioGroup2 as i, Anchor as l, Item2 as n, Root2 as o, Portal2 as r, Separator2 as s, Content2 as t, Content as u };
+export { RadioGroup2 as a, Separator2 as c, Content as d, Root2$1 as f, Portal2 as i, Trigger as l, Item2 as n, RadioItem2 as o, createPopperScope as p, ItemIndicator2 as r, Root2 as s, Content2 as t, Anchor as u };

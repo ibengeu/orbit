@@ -60,25 +60,31 @@ export type Message = {
   system?: boolean;
 };
 
-export type CallMode = "direct" | "group" | "channel";
+export type CallKind = "voice" | "video";
 
-export type CallParticipant = {
-  userId: string;
-  muted: boolean;
-  video: boolean;
-};
+export type DeviceState = "idle" | "requesting" | "live" | "muted" | "denied" | "unavailable";
 
-export type SimCall = {
+export type DemoCall = {
   id: string;
   conversationId: string;
-  mode: CallMode;
-  phase: "ringing" | "active";
-  connectedAt: number | null;
-  participants: CallParticipant[];
-  youJoined: boolean;
-  youStarted: boolean;
-  simulated: boolean;
-  declineOnTimeout: boolean;
+  kind: CallKind;
+  phase: "lobby" | "active";
+  startedAt: number | null;
+  surface: "open" | "minimized";
+  mic: DeviceState;
+  camera: DeviceState;
+  micDetail: string | null;
+  cameraDetail: string | null;
+};
+
+export type CallHistoryItem = {
+  id: string;
+  conversationId: string;
+  kind: CallKind;
+  initiatorId: string;
+  startedAt: string;
+  endedAt: string;
+  durationSec: number;
 };
 
 export type PersistedOrbit = {
@@ -89,6 +95,9 @@ export type PersistedOrbit = {
   drafts: Record<string, string>;
   draftAttachments: Record<string, Attachment[]>;
   savedIds: string[];
+  savedAt: Record<string, string>;
+  activityReadIds: string[];
+  callHistory: CallHistoryItem[];
   collapsed: { channels: boolean; dms: boolean };
   lastRead: Record<string, string>;
   lastChannel: Record<string, string>;

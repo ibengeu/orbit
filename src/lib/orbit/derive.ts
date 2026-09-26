@@ -23,7 +23,7 @@ export function presenceOf(userId: string, selfPresence: Presence): Presence {
 }
 
 export function presenceLabel(presence: Presence) {
-  if (presence === "online") return "Online";
+  if (presence === "online") return "Available";
   if (presence === "away") return "Away";
   return "Offline";
 }
@@ -86,11 +86,21 @@ export function replyCount(messages: Message[], parentId: string) {
 
 export function unreadMeta(messages: Message[], conversationId: string, lastRead?: string) {
   const cutoff = lastRead ? new Date(lastRead).getTime() : 0;
-  const fresh = rootMessages(messages, conversationId).filter(
-    (message) => message.authorId !== YOU && new Date(message.createdAt).getTime() > cutoff,
+  const fresh = messages.filter(
+    (message) =>
+      message.conversationId === conversationId &&
+      !message.system &&
+      message.authorId !== YOU &&
+      new Date(message.createdAt).getTime() > cutoff,
   );
-  const mention = fresh.some((message) => new RegExp(`@${YOU}\\b`, "i").test(message.body));
-  return { unread: fresh.length, mention };
+  return { unread: fresh.length };
+}
+
+export function mentionBadge(messages: Message[], conversationId: string, readIds: string[]) {
+  const read = new Set(readIds);
+  return activityItems(messages).filter(
+    (item) => item.kind === "mention" && item.conversationId === conversationId && !read.has(item.id),
+  ).length;
 }
 
 export type MessageGroup = {
@@ -185,7 +195,8 @@ export function activityItems(messages: Message[]): ActivityItem[] {
   const items: ActivityItem[] = [];
   for (const message of messages) {
     if (message.authorId === YOU) continue;
-    const mention = new RegExp(`@${YOU}\\b`, "i").test(message.body);
+    const handle = userById(YOU).handle;
+    const mention = new RegExp(`@${handle}\\b`, "i").test(message.body);
     const threadUpdate = Boolean(message.parentId && (participated.has(message.parentId) || mention));
     if (!mention && !threadUpdate) continue;
     items.push({

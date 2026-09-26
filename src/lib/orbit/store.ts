@@ -1,7 +1,8 @@
 import { create } from "zustand";
-import { assembleMessages, conversationById, conversationsOf, initialsFor, memberIds, slugify, unreadMeta } from "@/lib/orbit/derive";
+import { activityItems, assembleMessages, conversationById, conversationsOf, initialsFor, memberIds, slugify, unreadMeta } from "@/lib/orbit/derive";
+import { captureMedia, explainMediaError, localTracks, setTrackEnabled, stopCallTracks } from "@/lib/orbit/media";
 import { INITIAL_LAST_READ, STORAGE_KEY, YOU } from "@/lib/orbit/seed";
-import type { Attachment, Conversation, Message, PersistedOrbit, Presence, SimCall, View, Workspace } from "@/lib/orbit/types";
+import type { Attachment, CallHistoryItem, CallKind, Conversation, DemoCall, Message, PersistedOrbit, Presence, View, Workspace } from "@/lib/orbit/types";
 
 type OrbitStore = PersistedOrbit & {
   hydrated: boolean;
@@ -56,20 +57,24 @@ type OrbitStore = PersistedOrbit & {
   goHome: () => void;
   goDms: () => void;
   resetDemo: () => void;
-  call: SimCall | null;
-  callNotice: string | null;
-  startCall: (conversationId: string) => void;
-  cancelRing: () => void;
-  acceptCall: () => void;
-  missCall: () => void;
-  setDeclineOnTimeout: (value: boolean) => void;
-  toggleSelfMute: () => void;
-  toggleSelfVideo: () => void;
-  leaveCall: () => void;
-  endCallForAll: () => void;
-  joinCall: () => void;
-  simulateJoins: () => void;
-  simulateLeave: () => void;
+  liveMessage: string;
+  announce: (message: string) => void;
+  call: DemoCall | null;
+  callSwitch: { conversationId: string; kind: CallKind } | null;
+  requestCall: (conversationId: string, kind: CallKind) => void;
+  cancelLobby: () => void;
+  joinDemoCall: (options?: { withoutMic?: boolean; withoutCamera?: boolean }) => Promise<void>;
+  enablePreview: () => Promise<void>;
+  retryDevice: (device: "mic" | "camera") => Promise<void>;
+  toggleMute: () => Promise<void>;
+  toggleCamera: () => Promise<void>;
+  endCall: () => void;
+  minimizeCall: () => void;
+  returnToCall: () => void;
+  confirmCallSwitch: () => void;
+  dismissCallSwitch: () => void;
+  openActivity: (messageId: string) => void;
+  markActivityRead: () => void;
 };
 
 const EMPTY_PERSISTED = (): PersistedOrbit => ({
@@ -80,6 +85,9 @@ const EMPTY_PERSISTED = (): PersistedOrbit => ({
   drafts: {},
   draftAttachments: {},
   savedIds: [],
+  savedAt: {},
+  activityReadIds: [],
+  callHistory: [],
   collapsed: { channels: false, dms: false },
   lastRead: { ...INITIAL_LAST_READ },
   lastChannel: { orbit: "general", lumen: "lumen-general" },
@@ -104,6 +112,9 @@ function snapshot(state: OrbitStore): PersistedOrbit {
     drafts: state.drafts,
     draftAttachments: state.draftAttachments,
     savedIds: state.savedIds,
+    savedAt: state.savedAt,
+    activityReadIds: state.activityReadIds,
+    callHistory: state.callHistory,
     collapsed: state.collapsed,
     lastRead: state.lastRead,
     lastChannel: state.lastChannel,
@@ -154,7 +165,10 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
   statusDialog: false,
   prefsDialog: false,
   call: null,
-  callNotice: null,
+  callSwitch: null,
+  liveMessage: "",
+
+  announce: (message) => set({ liveMessage: message }),
 
   hydrate: () => {
     if (get().hydrated) return;
@@ -167,7 +181,10 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
           drafts: saved.drafts ?? base.drafts,
           draftAttachments: saved.draftAttachments ?? base.draftAttachments,
           savedIds: saved.savedIds ?? base.savedIds,
-          collapsed: { ...base.collapsed, ...saved.collapsed },
+          savedAt: saved.savedAt ?? base.savedAt,
+          activityReadIds: saved.activityReadIds ?? base.activityReadIds,
+          callHistory: saved.callHistory ?? base.callHistory,
+          collapsed: { channels: false, dms: false },
           lastRead: { ...base.lastRead, ...saved.lastRead },
           lastChannel: { ...base.lastChannel, ...saved.lastChannel },
           lastDm: { ...base.lastDm, ...saved.lastDm },
@@ -231,6 +248,9 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
       conversationId: id,
       view: "conversation",
       navOpen: false,
+      menu: null,
+      searchOpen: false,
+      searchScopeId: null,
       recentIds,
       threadParentId: same || options?.keepThread ? state.threadParentId : null,
       lastRead: { ...state.lastRead, [id]: new Date().toISOString() },
@@ -242,6 +262,10 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
         conversation.kind === "dm" ? { ...state.lastDm, [conversation.workspaceId]: id } : state.lastDm,
     });
     persist(get);
+    const call = get().call;
+    if (call?.phase === "active" && call.conversationId !== id) {
+      set({ call: { ...call, surface: "minimized" } });
+    }
   },
 
   setView: (view) => {
@@ -252,7 +276,7 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
   toggleSection: (key) => {
     const collapsed = { ...get().collapsed, [key]: !get().collapsed[key] };
     set({ collapsed });
-    persist(get);
+    if (typeof sessionStorage !== "undefined") sessionStorage.setItem("orbit:collapsed", JSON.stringify(collapsed));
   },
 
   setDraft: (key, value) => {
@@ -291,6 +315,7 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
       drafts,
       draftAttachments,
       lastRead: { ...get().lastRead, [conversationId]: message.createdAt },
+      liveMessage: parentId ? "Reply sent" : "Message sent",
     });
     persist(get);
   },
@@ -318,9 +343,17 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
   },
 
   toggleSaved: (messageId) => {
-    const ids = get().savedIds;
-    const next = ids.includes(messageId) ? ids.filter((id) => id !== messageId) : [messageId, ...ids];
-    set({ savedIds: next });
+    const state = get();
+    if (state.deletedIds.includes(messageId)) return;
+    const saved = state.savedIds.includes(messageId);
+    const savedAt = { ...state.savedAt };
+    if (saved) delete savedAt[messageId];
+    else savedAt[messageId] = new Date().toISOString();
+    set({
+      savedIds: saved ? state.savedIds.filter((id) => id !== messageId) : [messageId, ...state.savedIds],
+      savedAt,
+      liveMessage: saved ? "Removed from Later" : "Saved for later",
+    });
     persist(get);
   },
 
@@ -338,7 +371,14 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
 
   deleteMessage: (messageId) => {
     if (get().deletedIds.includes(messageId)) return;
-    set({ deletedIds: [...get().deletedIds, messageId] });
+    const savedAt = { ...get().savedAt };
+    delete savedAt[messageId];
+    set({
+      deletedIds: [...get().deletedIds, messageId],
+      savedIds: get().savedIds.filter((id) => id !== messageId),
+      savedAt,
+      liveMessage: "Message deleted",
+    });
     persist(get);
   },
 
@@ -367,7 +407,7 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
     set({ highlightId: messageId });
     window.setTimeout(() => {
       if (get().highlightId === messageId) set({ highlightId: null });
-    }, 2400);
+    }, 2000);
   },
 
   focusMessage: (messageId) => {
@@ -398,7 +438,25 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
     persist(get);
     window.setTimeout(() => {
       if (get().highlightId === message.id) set({ highlightId: null });
-    }, 2400);
+    }, 2000);
+  },
+
+  openActivity: (messageId) => {
+    const state = get();
+    if (state.deletedIds.includes(messageId)) return;
+    const message = assembleMessages(state).find((item) => item.id === messageId);
+    if (!message) return;
+    if (!state.activityReadIds.includes(messageId)) {
+      set({ activityReadIds: [...state.activityReadIds, messageId] });
+      persist(get);
+    }
+    get().focusMessage(messageId);
+  },
+
+  markActivityRead: () => {
+    const ids = activityItems(assembleMessages(get())).map((item) => item.id);
+    set({ activityReadIds: [...new Set([...get().activityReadIds, ...ids])], liveMessage: "Activity marked read" });
+    persist(get);
   },
 
   openSearch: (scopeId = null) => {
@@ -494,15 +552,7 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
   },
 
   goHome: () => {
-    const state = get();
-    const messages = assembleMessages(state);
-    const channels = conversationsOf(state.extraConversations).filter(
-      (item) => item.workspaceId === "orbit" && item.kind === "channel",
-    );
-    const unread = channels.find((item) => unreadMeta(messages, item.id, state.lastRead[item.id]).unread > 0);
-    const next = unread ?? channels[0];
-    if (next) get().openConversation(next.id);
-    else set({ view: "conversation", workspaceId: "orbit", navOpen: false });
+    get().openConversation("general");
   },
 
   goDms: () => {
@@ -537,202 +587,298 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
       statusDialog: false,
       prefsDialog: false,
       call: null,
-      callNotice: null,
+      callSwitch: null,
     });
   },
 
-  startCall: (conversationId) => {
+requestCall: (conversationId, kind) => {
     const state = get();
-    if (state.call) {
-      flashCallNotice(set, get, "You're already in a call");
+    const conversation = conversationById(conversationsOf(state.extraConversations), conversationId);
+    if (!conversation || conversation.kind !== "dm") return;
+    if (memberIds(conversation).length > 8) {
+      set({ liveMessage: "Calls are limited to 8 people in this demo." });
       return;
     }
-    const conversation = conversationById(conversationsOf(state.extraConversations), conversationId);
-    if (!conversation) return;
-    const others = memberIds(conversation).filter((id) => id !== YOU);
-    const mode = conversation.kind === "channel" ? "channel" : others.length > 1 || conversation.title ? "group" : "direct";
-    const id = `call-${crypto.randomUUID()}`;
-    if (mode === "channel") {
+    if (state.call && !(state.call.conversationId === conversationId && state.call.kind === kind)) {
+      set({ callSwitch: { conversationId, kind } });
+      return;
+    }
+    if (state.call) {
+      set({ call: { ...state.call, surface: "open" }, callSwitch: null });
+      return;
+    }
+    stopCallTracks();
+    set({
+      callSwitch: null,
+      call: {
+        id: `call-${crypto.randomUUID()}`,
+        conversationId,
+        kind,
+        phase: "lobby",
+        startedAt: null,
+        surface: "open",
+        mic: "idle",
+        camera: "idle",
+        micDetail: null,
+        cameraDetail: null,
+      },
+    });
+  },
+
+  cancelLobby: () => {
+    const call = get().call;
+    if (!call || call.phase !== "lobby") return;
+    stopCallTracks();
+    set({ call: null });
+  },
+
+  enablePreview: async () => {
+    const call = get().call;
+    if (!call || call.kind !== "video" || call.phase !== "lobby") return;
+    set({ call: { ...call, camera: "requesting", cameraDetail: null } });
+    try {
+      await captureMedia(false, true);
+      const current = get().call;
+      if (!current || current.id !== call.id) return;
+      set({ call: { ...current, camera: "live", cameraDetail: null } });
+    } catch (error) {
+      const current = get().call;
+      if (!current || current.id !== call.id) return;
+      const missing = error instanceof DOMException && (error.name === "NotFoundError" || error.name === "DevicesNotFoundError");
       set({
         call: {
-          id,
-          conversationId,
-          mode,
-          phase: "active",
-          connectedAt: Date.now(),
-          participants: [],
-          youJoined: false,
-          youStarted: true,
-          simulated: false,
-          declineOnTimeout: false,
+          ...current,
+          camera: missing ? "unavailable" : "denied",
+          cameraDetail: explainMediaError(error, "camera"),
         },
-        callNotice: null,
       });
-      postCallMessage(set, get, conversationId, "Call started");
-      return;
     }
-    set({
-      call: {
-        id,
-        conversationId,
-        mode,
-        phase: "ringing",
-        connectedAt: null,
-        participants: others.map((userId) => ({ userId, muted: false, video: false })),
-        youJoined: true,
-        youStarted: true,
-        simulated: false,
-        declineOnTimeout: false,
-      },
-      callNotice: null,
-    });
   },
 
-  cancelRing: () => {
+  joinDemoCall: async (options) => {
     const call = get().call;
-    if (!call || call.phase !== "ringing") return;
-    set({ call: null });
-  },
-
-  acceptCall: () => {
-    const call = get().call;
-    if (!call || call.phase !== "ringing") return;
-    const participants = [
-      { userId: YOU, muted: false, video: false },
-      ...call.participants.filter((person) => person.userId !== YOU),
-    ];
-    set({
-      call: { ...call, phase: "active", connectedAt: Date.now(), participants, youJoined: true },
-    });
-    postCallMessage(set, get, call.conversationId, "Call started");
-  },
-
-  missCall: () => {
-    const call = get().call;
-    if (!call || call.phase !== "ringing") return;
-    set({ call: null });
-    postCallMessage(set, get, call.conversationId, "Missed call");
-  },
-
-  setDeclineOnTimeout: (declineOnTimeout) => {
-    const call = get().call;
-    if (!call || call.phase !== "ringing") return;
-    set({ call: { ...call, declineOnTimeout } });
-  },
-
-  toggleSelfMute: () => patchSelf(set, get, (person) => ({ ...person, muted: !person.muted })),
-  toggleSelfVideo: () => patchSelf(set, get, (person) => ({ ...person, video: !person.video })),
-
-  leaveCall: () => {
-    const call = get().call;
-    if (!call || call.phase !== "active" || !call.youJoined) return;
-    const participants = call.participants.filter((person) => person.userId !== YOU);
-    if (call.mode === "direct" || participants.length === 0) {
-      finishCall(set, get);
-      return;
-    }
-    set({ call: { ...call, participants, youJoined: false } });
-  },
-
-  endCallForAll: () => {
-    const call = get().call;
-    if (!call || call.phase !== "active" || !call.youStarted) return;
-    finishCall(set, get);
-  },
-
-  joinCall: () => {
-    const call = get().call;
-    if (!call || call.phase !== "active" || call.youJoined) return;
+    if (!call || call.phase !== "lobby") return;
+    const wantMic = !options?.withoutMic;
+    const wantCamera = call.kind === "video" && !options?.withoutCamera;
     set({
       call: {
         ...call,
-        youJoined: true,
-        participants: [{ userId: YOU, muted: false, video: false }, ...call.participants],
+        mic: wantMic ? "requesting" : "muted",
+        camera: wantCamera ? "requesting" : call.camera === "live" ? "live" : "muted",
+        micDetail: null,
       },
     });
+    try {
+      if (wantMic || (wantCamera && call.camera !== "live")) {
+        await captureMedia(wantMic, wantCamera && call.camera !== "live");
+      }
+      const current = get().call;
+      if (!current || current.id !== call.id) return;
+      const startedAt = Date.now();
+      set({
+        call: {
+          ...current,
+          phase: "active",
+          startedAt,
+          surface: "open",
+          mic: wantMic ? "live" : "muted",
+          camera: wantCamera || current.camera === "live" ? "live" : "muted",
+          micDetail: null,
+          cameraDetail: null,
+        },
+      });
+      sessionStorage.setItem(
+        "orbit:live-call",
+        JSON.stringify({ id: current.id, conversationId: current.conversationId, kind: current.kind, startedAt }),
+      );
+    } catch (error) {
+      const current = get().call;
+      if (!current || current.id !== call.id) return;
+      const missing = error instanceof DOMException && (error.name === "NotFoundError" || error.name === "DevicesNotFoundError");
+      set({
+        call: {
+          ...current,
+          phase: "lobby",
+          mic: wantMic ? (missing ? "unavailable" : "denied") : "muted",
+          camera: wantCamera ? (missing ? "unavailable" : "denied") : current.camera,
+          micDetail: wantMic ? explainMediaError(error, "microphone") : null,
+          cameraDetail: wantCamera ? explainMediaError(error, "camera") : current.cameraDetail,
+        },
+      });
+    }
   },
 
-  simulateJoins: () => {
-    const state = get();
-    const call = state.call;
-    if (!call || call.phase !== "active" || call.simulated || call.mode === "direct") return;
-    const conversation = conversationById(conversationsOf(state.extraConversations), call.conversationId);
-    if (!conversation) return;
-    const present = new Set(call.participants.map((person) => person.userId));
-    const extras = memberIds(conversation)
-      .filter((id) => id !== YOU && !present.has(id))
-      .slice(0, 1)
-      .map((userId) => ({ userId, muted: false, video: false }));
-    if (extras.length === 0) {
-      set({ call: { ...call, simulated: true } });
+  retryDevice: async (device) => {
+    const call = get().call;
+    if (!call) return;
+    if (device === "mic") {
+      set({ call: { ...call, mic: "requesting", micDetail: null } });
+      try {
+        await captureMedia(true, false);
+        const current = get().call;
+        if (!current) return;
+        set({ call: { ...current, mic: "live", micDetail: null } });
+      } catch (error) {
+        const current = get().call;
+        if (!current) return;
+        const missing = error instanceof DOMException && (error.name === "NotFoundError" || error.name === "DevicesNotFoundError");
+        set({ call: { ...current, mic: missing ? "unavailable" : "denied", micDetail: explainMediaError(error, "microphone") } });
+      }
       return;
     }
-    set({ call: { ...call, simulated: true, participants: [...call.participants, ...extras] } });
+    set({ call: { ...call, camera: "requesting", cameraDetail: null } });
+    try {
+      await captureMedia(false, true);
+      const current = get().call;
+      if (!current) return;
+      set({ call: { ...current, camera: "live", cameraDetail: null } });
+    } catch (error) {
+      const current = get().call;
+      if (!current) return;
+      const missing = error instanceof DOMException && (error.name === "NotFoundError" || error.name === "DevicesNotFoundError");
+      set({ call: { ...current, camera: missing ? "unavailable" : "denied", cameraDetail: explainMediaError(error, "camera") } });
+    }
   },
 
-  simulateLeave: () => {
+  toggleMute: async () => {
     const call = get().call;
     if (!call || call.phase !== "active") return;
-    const other = call.participants.find((person) => person.userId !== YOU);
-    if (!other) return;
-    const participants = call.participants.filter((person) => person.userId !== other.userId);
-    if (participants.length === 0) {
-      finishCall(set, get);
+    if (call.mic === "live") {
+      setTrackEnabled("audio", false);
+      set({ call: { ...call, mic: "muted" } });
       return;
     }
-    set({ call: { ...call, participants, youJoined: participants.some((person) => person.userId === YOU) } });
+    if (call.mic === "muted") {
+      if (localTracks().audio) {
+        setTrackEnabled("audio", true);
+        set({ call: { ...get().call!, mic: "live", micDetail: null } });
+        return;
+      }
+      await get().retryDevice("mic");
+    }
   },
+
+  toggleCamera: async () => {
+    const call = get().call;
+    if (!call || call.phase !== "active" || call.kind !== "video") return;
+    if (call.camera === "live") {
+      setTrackEnabled("video", false);
+      set({ call: { ...call, camera: "muted" } });
+      return;
+    }
+    if (localTracks().video) {
+      setTrackEnabled("video", true);
+      set({ call: { ...get().call!, camera: "live", cameraDetail: null } });
+      return;
+    }
+    await get().retryDevice("camera");
+  },
+
+  endCall: () => {
+    const call = get().call;
+    stopCallTracks();
+    sessionStorage.removeItem("orbit:live-call");
+    if (!call) return;
+    if (call.phase === "active" && call.startedAt != null) recordCall(set, get, call);
+    set({ call: null, callSwitch: null });
+  },
+
+  minimizeCall: () => {
+    const call = get().call;
+    if (!call || call.phase !== "active") return;
+    set({ call: { ...call, surface: "minimized" } });
+  },
+
+  returnToCall: () => {
+    const call = get().call;
+    if (!call) {
+      set({ callSwitch: null });
+      return;
+    }
+    set({ call: { ...call, surface: "open" }, callSwitch: null });
+    get().openConversation(call.conversationId);
+  },
+
+  confirmCallSwitch: () => {
+    const next = get().callSwitch;
+    if (!next) return;
+    get().endCall();
+    get().requestCall(next.conversationId, next.kind);
+  },
+
+  dismissCallSwitch: () => set({ callSwitch: null }),
 }));
 
-let callNoticeTimer = 0;
+const LIVE_CALL_KEY = "orbit:live-call";
 
-function flashCallNotice(set: (partial: Partial<OrbitStore>) => void, get: () => OrbitStore, message: string) {
-  window.clearTimeout(callNoticeTimer);
-  set({ callNotice: message });
-  callNoticeTimer = window.setTimeout(() => {
-    if (get().callNotice === message) set({ callNotice: null });
-  }, 2500);
+export function recoverInterruptedCall() {
+  if (typeof sessionStorage === "undefined") return;
+  const raw = sessionStorage.getItem(LIVE_CALL_KEY);
+  sessionStorage.removeItem(LIVE_CALL_KEY);
+  if (!raw) return;
+  try {
+    const saved = JSON.parse(raw) as { id: string; conversationId: string; kind: CallKind; startedAt: number };
+    if (!saved.id || !saved.conversationId || !saved.startedAt) return;
+    const state = useOrbit.getState();
+    if (state.createdMessages.some((message) => message.id === `history-${saved.id}`)) return;
+    const endedAt = Date.now();
+    recordCall(
+      (partial) => useOrbit.setState(partial),
+      useOrbit.getState,
+      {
+        id: saved.id,
+        conversationId: saved.conversationId,
+        kind: saved.kind,
+        phase: "active",
+        startedAt: saved.startedAt,
+        surface: "open",
+        mic: "idle",
+        camera: "idle",
+        micDetail: null,
+        cameraDetail: null,
+      },
+      endedAt,
+    );
+  } catch {
+    /* ignore malformed recovery records */
+  }
 }
 
-function postCallMessage(set: (partial: Partial<OrbitStore>) => void, get: () => OrbitStore, conversationId: string, body: string) {
+function recordCall(
+  set: (partial: Partial<OrbitStore>) => void,
+  get: () => OrbitStore,
+  call: DemoCall,
+  endedAtMs = Date.now(),
+) {
+  if (call.startedAt == null) return;
+  const historyId = `history-${call.id}`;
+  if (get().createdMessages.some((message) => message.id === historyId)) return;
+  const durationSec = Math.max(0, Math.floor((endedAtMs - call.startedAt) / 1000));
+  const startedAt = new Date(call.startedAt).toISOString();
+  const endedAt = new Date(endedAtMs).toISOString();
+  const item: CallHistoryItem = {
+    id: historyId,
+    conversationId: call.conversationId,
+    kind: call.kind,
+    initiatorId: YOU,
+    startedAt,
+    endedAt,
+    durationSec,
+  };
+  const label = `${Math.floor(durationSec / 60)}:${String(durationSec % 60).padStart(2, "0")}`;
+  const noun = call.kind === "video" ? "Video call" : "Voice call";
   const message: Message = {
-    id: `m-${crypto.randomUUID()}`,
-    conversationId,
+    id: historyId,
+    conversationId: call.conversationId,
     authorId: "system",
-    body,
-    createdAt: new Date().toISOString(),
+    body: `${noun} ended · ${label}`,
+    createdAt: endedAt,
     reactions: [],
     system: true,
   };
-  set({ createdMessages: [...get().createdMessages, message] });
-  persist(get);
-}
-
-function finishCall(set: (partial: Partial<OrbitStore>) => void, get: () => OrbitStore) {
-  const call = get().call;
-  if (!call || call.phase !== "active" || call.connectedAt == null) {
-    set({ call: null });
-    return;
-  }
-  const elapsed = Date.now() - call.connectedAt;
-  const total = Math.max(0, Math.floor(elapsed / 1000));
-  const label = `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
-  const conversationId = call.conversationId;
-  set({ call: null });
-  postCallMessage(set, get, conversationId, `Call ended — ${label}`);
-}
-
-function patchSelf(
-  set: (partial: Partial<OrbitStore>) => void,
-  get: () => OrbitStore,
-  update: (person: SimCall["participants"][number]) => SimCall["participants"][number],
-) {
-  const call = get().call;
-  if (!call) return;
   set({
-    call: {
-      ...call,
-      participants: call.participants.map((person) => (person.userId === YOU ? update(person) : person)),
-    },
+    createdMessages: [...get().createdMessages, message],
+    callHistory: [...get().callHistory, item],
   });
+  persist(get);
 }

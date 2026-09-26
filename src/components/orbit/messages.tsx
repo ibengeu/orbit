@@ -5,7 +5,8 @@ import { Bookmark, Copy, MessageSquare, MoreHorizontal, Pencil, Phone, Smile, Tr
 import { toast } from "sonner";
 import { Avatar } from "@/components/orbit/avatar";
 import { MessageBody } from "@/components/orbit/message-body";
-import { EMOJIS, YOU } from "@/lib/orbit/seed";
+import { fileUrl } from "@/lib/orbit/media";
+import { REACTIONS, YOU } from "@/lib/orbit/seed";
 import {
   absoluteTime,
   bucketByDay,
@@ -218,6 +219,7 @@ function MessageRow({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.body);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [linkCopy, setLinkCopy] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [dock, setDock] = useState<"top" | "bottom">("top");
   const [engaged, setEngaged] = useState(false);
@@ -338,15 +340,25 @@ function MessageRow({
           <MessageBody text={message.body} />
         )}
         {grouped && message.editedAt ? <span className="text-xs text-ink-faint">(edited)</span> : null}
-        {message.attachments?.map((file) => (
-          <p
-            key={file.id}
-            className="mt-2 inline-flex max-w-full items-center gap-2 rounded-md border border-line bg-paper-raised px-3 py-2 text-sm"
-          >
-            <span className="truncate font-medium">{file.name}</span>
-            <span className="text-xs text-ink-faint tabular-nums">{formatBytes(file.size)}</span>
-          </p>
-        ))}
+        {message.attachments?.map((file) => {
+          const href = fileUrl(file.id);
+          return (
+            <p
+              key={file.id}
+              className="mt-2 inline-flex max-w-full items-center gap-2 rounded-md border border-line bg-paper-raised px-3 py-2 text-sm"
+            >
+              <span className="truncate font-medium">{file.name}</span>
+              <span className="text-xs text-ink-faint tabular-nums">{formatBytes(file.size)}</span>
+              {href ? (
+                <a href={href} download={file.name} className="text-xs font-semibold text-accent underline">
+                  Open
+                </a>
+              ) : (
+                <span className="text-xs text-ink-soft">This file is no longer available locally.</span>
+              )}
+            </p>
+          );
+        })}
         <ReactionRow message={message} />
         {replies > 0 ? (
           <button
@@ -381,7 +393,7 @@ function MessageRow({
               align="end"
               className="orbit-pop z-50 grid grid-cols-8 gap-1 rounded-lg border border-line bg-paper-raised p-2 shadow-pop"
             >
-              {EMOJIS.map((emoji) => (
+              {REACTIONS.map((emoji) => (
                 <button
                   key={emoji}
                   type="button"
@@ -439,7 +451,7 @@ function MessageRow({
             >
               {picking ? (
                 <div className="grid grid-cols-8 gap-1 p-1">
-                  {EMOJIS.map((emoji) => (
+                  {REACTIONS.map((emoji) => (
                     <button
                       key={emoji}
                       type="button"
@@ -485,6 +497,16 @@ function MessageRow({
                     </button>
                   </div>
                 </div>
+              ) : linkCopy ? (
+                <label className="block px-2 py-2 text-xs">
+                  Copy this link
+                  <input
+                    readOnly
+                    value={linkCopy}
+                    className="mt-1 w-full rounded-md border border-line bg-paper px-2 py-2 text-sm"
+                    onFocus={(event) => event.currentTarget.select()}
+                  />
+                </label>
               ) : (
                 <>
                   {coarse ? (
@@ -510,7 +532,15 @@ function MessageRow({
                       {saved ? "Remove from Later" : "Save for later"}
                     </MenuItem>
                   ) : null}
-                  <MenuItem onSelect={() => void copyMessageLink(message)}>
+                  <MenuItem
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      void copyMessageLink(message).then((fallback) => {
+                        if (fallback) setLinkCopy(fallback);
+                        else setMenu(null);
+                      });
+                    }}
+                  >
                     <Copy className="size-4" aria-hidden="true" />
                     Copy link
                   </MenuItem>
@@ -579,8 +609,9 @@ async function copyMessageLink(message: Message) {
   try {
     await navigator.clipboard.writeText(url);
     toast("Link copied");
+    return null;
   } catch {
-    toast("Couldn’t copy the link");
+    return url;
   }
 }
 

@@ -1,270 +1,299 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Mic, MicOff, Phone, PhoneOff, Video, VideoOff } from "lucide-react";
-import { Avatar, avatarClass } from "@/components/orbit/avatar";
-import { conversationById, conversationsOf, userById } from "@/lib/orbit/derive";
+import { Avatar } from "@/components/orbit/avatar";
+import { conversationTitle, conversationsOf, conversationById, memberIds, userById } from "@/lib/orbit/derive";
+import { localTracks } from "@/lib/orbit/media";
 import { YOU } from "@/lib/orbit/seed";
-import { useOrbit } from "@/lib/orbit/store";
-import { cn } from "@/lib/utils";
-
-const RING_MS = 4000;
+import { recoverInterruptedCall, useOrbit } from "@/lib/orbit/store";
+import type { DemoCall } from "@/lib/orbit/types";
 
 export function CallRuntime() {
-  const callId = useOrbit((state) => state.call?.id ?? null);
-  const phase = useOrbit((state) => state.call?.phase ?? null);
-  const conversationId = useOrbit((state) => state.conversationId);
-  const view = useOrbit((state) => state.view);
-
   useEffect(() => {
-    const call = useOrbit.getState().call;
-    if (!call || call.phase !== "ringing") return;
-    if (view !== "conversation" || conversationId !== call.conversationId) {
-      useOrbit.getState().cancelRing();
-    }
-  }, [callId, phase, conversationId, view]);
-
-  useEffect(() => {
-    const call = useOrbit.getState().call;
-    if (!call || call.phase !== "ringing") return;
-    const timer = window.setTimeout(() => {
-      const current = useOrbit.getState().call;
-      if (!current || current.id !== call.id || current.phase !== "ringing") return;
-      if (current.declineOnTimeout) useOrbit.getState().missCall();
-      else useOrbit.getState().acceptCall();
-    }, RING_MS);
-    return () => window.clearTimeout(timer);
-  }, [callId, phase]);
-
+    recoverInterruptedCall();
+    const end = () => {
+      const call = useOrbit.getState().call;
+      if (call?.phase === "active") useOrbit.getState().endCall();
+    };
+    window.addEventListener("pagehide", end);
+    return () => window.removeEventListener("pagehide", end);
+  }, []);
   return null;
 }
 
 export function CallReturnBar() {
   const call = useOrbit((state) => state.call);
-  const conversationId = useOrbit((state) => state.conversationId);
-  const view = useOrbit((state) => state.view);
   const [now, setNow] = useState(() => Date.now());
-  const away = Boolean(call && call.phase === "active" && (view !== "conversation" || conversationId !== call.conversationId));
-
+  const visible = Boolean(call && call.phase === "active" && call.surface === "minimized");
   useEffect(() => {
-    if (!away) return;
+    if (!visible) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [away]);
-
-  if (!call || !away || call.connectedAt == null) return null;
+  }, [visible]);
+  if (!call || !visible || call.startedAt == null) return null;
   return (
     <div className="flex h-12 shrink-0 items-center gap-2 border-b border-line bg-plum px-3 text-paper">
       <Phone className="size-4 shrink-0" aria-hidden="true" />
       <p className="min-w-0 flex-1 truncate text-sm font-medium">
-        {call.youJoined ? "In a call" : "Call in progress"} · {clock(now - call.connectedAt)}
+        Demo {call.kind} call · {clock(now - call.startedAt)}
       </p>
       <button
         type="button"
         className="rounded-md px-3 py-2 text-sm font-semibold hover:bg-plum-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper"
-        onClick={() => useOrbit.getState().openConversation(call.conversationId)}
+        onClick={() => useOrbit.getState().returnToCall()}
       >
-        Return
+        Return to call
       </button>
-      {call.youJoined ? (
-        <button
-          type="button"
-          className="rounded-md px-3 py-2 text-sm font-semibold hover:bg-plum-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper"
-          onClick={() => useOrbit.getState().leaveCall()}
-        >
-          Leave
-        </button>
-      ) : null}
     </div>
   );
 }
 
-export function CallColumn({ conversationId }: { conversationId: string }) {
+export function CallSurfaces() {
   const call = useOrbit((state) => state.call);
-  const notice = useOrbit((state) => state.callNotice);
-  if (call?.conversationId !== conversationId) {
-    return notice ? <Notice message={notice} /> : null;
-  }
+  const callSwitch = useOrbit((state) => state.callSwitch);
   return (
     <>
-      {notice ? <Notice message={notice} /> : null}
-      {call.phase === "ringing" ? <Ringing callId={call.id} /> : null}
-      {call.phase === "active" && call.youJoined ? <ActiveCall /> : null}
-      {call.phase === "active" && !call.youJoined ? <CallBanner /> : null}
+      {call && call.surface === "open" ? <CallDialog call={call} /> : null}
+      {callSwitch ? <SwitchDialog /> : null}
     </>
   );
 }
 
-function Notice({ message }: { message: string }) {
-  return (
-    <p role="status" className="border-b border-line bg-paper-raised px-4 py-2 text-sm text-ink">
-      {message}
-    </p>
-  );
-}
-
-function Ringing({ callId }: { callId: string }) {
-  const call = useOrbit((state) => state.call);
+function CallDialog({ call }: { call: DemoCall }) {
   const extra = useOrbit((state) => state.extraConversations);
-  if (!call || call.id !== callId) return null;
   const conversation = conversationById(conversationsOf(extra), call.conversationId);
-  const names = call.participants.map((person) => userById(person.userId).name.split(" ")[0]);
-  const who = names.length === 0 ? "the group" : names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
-  return (
-    <section aria-label="Ringing" className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-paper-raised px-4 py-3">
-      <span className="orbit-ring inline-flex rounded-full">
-        <Avatar userId={call.participants[0]?.userId ?? YOU} size="md" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold">Ringing {who}…</p>
-        <p className="truncate text-xs text-ink-faint">
-          {conversation?.kind === "dm" && conversation.title ? "Group call" : "Answers automatically, or choose an outcome"}
-        </p>
-      </div>
-      <label className="hidden items-center gap-2 text-xs text-ink-soft sm:inline-flex">
-        <input
-          type="checkbox"
-          checked={call.declineOnTimeout}
-          onChange={(event) => useOrbit.getState().setDeclineOnTimeout(event.target.checked)}
-        />
-        No answer
-      </label>
-      <button type="button" className={controlClass} onClick={() => useOrbit.getState().acceptCall()}>
-        Accept
-      </button>
-      <button type="button" className={controlClass} onClick={() => useOrbit.getState().missCall()}>
-        Decline
-      </button>
-      <button type="button" className={controlClass} onClick={() => useOrbit.getState().cancelRing()}>
-        Cancel
-      </button>
-    </section>
-  );
-}
+  const title = conversation ? conversationTitle(conversation) : "Conversation";
+  const others = conversation ? memberIds(conversation).filter((id) => id !== YOU) : [];
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    heading.current?.focus();
+  }, [call.phase, call.id]);
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      if (call.phase === "lobby") useOrbit.getState().cancelLobby();
+      else useOrbit.getState().minimizeCall();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [call.phase]);
 
-function CallBanner() {
-  const call = useOrbit((state) => state.call);
-  const [connecting, setConnecting] = useState(false);
-  if (!call) return null;
-  const count = call.participants.length;
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-paper-raised px-4 py-2">
-      <Phone className="size-4 shrink-0 text-accent" aria-hidden="true" />
-      <p className="min-w-0 flex-1 truncate text-sm">
-        {count === 0 ? "Call in progress — no one has joined yet" : `Call in progress — ${count} ${count === 1 ? "person" : "people"}`}
-      </p>
-      {call.mode !== "direct" && !call.simulated ? (
-        <button type="button" className={controlClass} onClick={() => useOrbit.getState().simulateJoins()}>
-          Someone joins
-        </button>
-      ) : null}
-      {call.participants.some((person) => person.userId !== YOU) ? (
-        <button type="button" className={controlClass} onClick={() => useOrbit.getState().simulateLeave()}>
-          Someone leaves
-        </button>
-      ) : null}
-      <button
-        type="button"
-        className="inline-flex h-11 items-center rounded-md bg-accent px-3 text-sm font-semibold text-accent-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-        onClick={() => {
-          setConnecting(true);
-          window.setTimeout(() => {
-            useOrbit.getState().joinCall();
-            setConnecting(false);
-          }, 400);
-        }}
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/50 p-0 sm:items-center sm:p-4" role="presentation">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="call-title"
+        className="flex max-h-[100dvh] w-full flex-col bg-paper text-ink shadow-pop sm:max-h-[90dvh] sm:max-w-3xl sm:rounded-xl"
       >
-        {connecting ? "Connecting…" : "Join"}
-      </button>
-      {call.youStarted ? (
-        <button type="button" className={controlClass} onClick={() => useOrbit.getState().endCallForAll()}>
-          End for all
-        </button>
-      ) : null}
+        <header className="flex items-start gap-3 border-b border-line px-4 py-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold tracking-wide text-accent uppercase">Demo call</p>
+            <h2 id="call-title" ref={heading} tabIndex={-1} className="truncate text-lg font-semibold outline-none">
+              {call.kind === "video" ? "Video" : "Voice"} · {title}
+            </h2>
+            <p className="text-sm text-ink-soft">Demo call — other participants are simulated.</p>
+          </div>
+          <button
+            type="button"
+            className="inline-flex h-11 items-center rounded-md px-3 text-sm font-medium hover:bg-line focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            onClick={() => (call.phase === "lobby" ? useOrbit.getState().cancelLobby() : useOrbit.getState().minimizeCall())}
+          >
+            {call.phase === "lobby" ? "Cancel" : "Hide"}
+          </button>
+        </header>
+        {call.phase === "lobby" ? <Lobby call={call} others={others} /> : <ActiveCall call={call} others={others} />}
+      </section>
     </div>
   );
 }
 
-function ActiveCall() {
-  const call = useOrbit((state) => state.call);
+function Lobby({ call, others }: { call: DemoCall; others: string[] }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    const node = videoRef.current;
+    const track = localTracks().video;
+    if (!node || !track) return;
+    const stream = new MediaStream([track]);
+    node.srcObject = stream;
+    return () => {
+      node.srcObject = null;
+    };
+  }, [call.camera]);
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
+      <p className="text-sm text-ink-soft">
+        Invitees: {others.map((id) => userById(id).name).join(", ") || "Just you"}. Simulated participants will not hear or see you.
+      </p>
+      {call.kind === "video" ? (
+        <div className="overflow-hidden rounded-lg bg-plum">
+          {call.camera === "live" ? (
+            <video ref={videoRef} autoPlay playsInline muted className="aspect-video w-full -scale-x-100 object-cover" />
+          ) : (
+            <div className="flex aspect-video items-center justify-center">
+              <Avatar userId={YOU} size="md" />
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2 p-3">
+            <button type="button" className={buttonClass} onClick={() => void useOrbit.getState().enablePreview()}>
+              {call.camera === "requesting" ? "Requesting camera…" : "Enable preview"}
+            </button>
+            <p className="text-xs text-plum-muted">Device permission is requested only after you enable preview or join.</p>
+          </div>
+        </div>
+      ) : null}
+      <Status call={call} />
+      <div className="mt-auto flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="inline-flex h-11 items-center rounded-md bg-accent px-4 text-sm font-semibold text-accent-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          onClick={() => void useOrbit.getState().joinDemoCall()}
+        >
+          {call.mic === "requesting" || call.camera === "requesting" ? "Requesting access…" : "Join demo call"}
+        </button>
+        {call.mic === "denied" || call.mic === "unavailable" ? (
+          <button type="button" className={buttonClass} onClick={() => void useOrbit.getState().joinDemoCall({ withoutMic: true })}>
+            Join without microphone
+          </button>
+        ) : null}
+        {call.kind === "video" && (call.camera === "denied" || call.camera === "unavailable") ? (
+          <button type="button" className={buttonClass} onClick={() => void useOrbit.getState().joinDemoCall({ withoutCamera: true })}>
+            Join without camera
+          </button>
+        ) : null}
+        <button type="button" className={buttonClass} onClick={() => useOrbit.getState().cancelLobby()}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ActiveCall({ call, others }: { call: DemoCall; others: string[] }) {
   const [now, setNow] = useState(() => Date.now());
+  const videoRef = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-  if (!call || call.connectedAt == null) return null;
-  const you = call.participants.find((person) => person.userId === YOU);
-  const count = call.participants.length;
+  useEffect(() => {
+    const node = videoRef.current;
+    const track = localTracks().video;
+    if (!node) return;
+    if (!track || call.camera !== "live") {
+      node.srcObject = null;
+      return;
+    }
+    node.srcObject = new MediaStream([track]);
+    return () => {
+      node.srcObject = null;
+    };
+  }, [call.camera]);
+  const elapsed = call.startedAt ? clock(now - call.startedAt) : "0:00";
   return (
-    <section aria-label="Active call" className="flex max-h-80 shrink-0 flex-col gap-3 overflow-y-auto border-b border-line bg-paper-raised px-4 py-3 max-md:absolute max-md:inset-x-0 max-md:top-14 max-md:bottom-0 max-md:z-20 max-md:max-h-none">
-      <div className="flex items-center gap-2">
-        <p className="text-sm font-semibold">Call · {clock(now - call.connectedAt)}</p>
-        <span className="text-xs text-ink-faint">
-          {count} {count === 1 ? "person" : "people"}
-        </span>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="grid min-h-0 flex-1 grid-cols-2 gap-2 overflow-y-auto p-3 sm:grid-cols-3">
+        <article className="flex min-h-36 flex-col items-center justify-center gap-2 rounded-lg bg-plum p-3 text-paper">
+          {call.kind === "video" && call.camera === "live" ? (
+            <video ref={videoRef} autoPlay playsInline muted className="aspect-video w-full -scale-x-100 rounded-md object-cover" />
+          ) : (
+            <Avatar userId={YOU} size="md" />
+          )}
+          <p className="text-sm font-semibold">Alex Morgan</p>
+          <p className="text-xs text-plum-muted">{call.mic === "live" ? "Microphone on" : "Muted"} · You</p>
+        </article>
+        {others.map((id) => (
+          <article key={id} className="flex min-h-36 flex-col items-center justify-center gap-2 rounded-lg bg-plum-raised p-3 text-paper">
+            <Avatar userId={id} size="md" />
+            <p className="max-w-full truncate text-sm font-semibold">{userById(id).name}</p>
+            <p className="text-center text-xs text-plum-muted">Simulated participant — no live video</p>
+          </article>
+        ))}
       </div>
-      <ul className={cn("grid gap-2", count <= 1 ? "grid-cols-1" : count === 2 ? "grid-cols-2" : count <= 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3 sm:grid-cols-4")}>
-        {call.participants.map((person) => {
-          const user = userById(person.userId);
-          return (
-            <li key={person.userId} className="flex min-h-24 flex-col items-center justify-center gap-1 rounded-lg bg-plum px-2 py-3 text-paper">
-              {person.video ? (
-                <span className={cn("inline-flex size-12 items-center justify-center rounded-md text-sm font-semibold", avatarClass(person.userId))}>
-                  {user.initials}
-                  <span className="sr-only">Camera placeholder, no live video</span>
-                </span>
-              ) : (
-                <Avatar userId={person.userId} size="md" />
-              )}
-              <span className="max-w-full truncate text-xs font-medium">{person.userId === YOU ? "You" : user.name}</span>
-              <span className="inline-flex items-center gap-1 text-xs text-plum-muted">
-                {person.muted ? <MicOff className="size-3.5" aria-hidden="true" /> : <Mic className="size-3.5" aria-hidden="true" />}
-                {person.video ? <Video className="size-3.5" aria-hidden="true" /> : <VideoOff className="size-3.5" aria-hidden="true" />}
-                <span className="sr-only">
-                  {person.muted ? "Muted" : "Microphone on"}, {person.video ? "camera placeholder" : "camera off"}
-                </span>
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-      <div className="flex flex-wrap items-center gap-2">
-        <button type="button" aria-pressed={Boolean(you?.muted)} className={controlClass} onClick={() => useOrbit.getState().toggleSelfMute()}>
-          {you?.muted ? "Unmute" : "Mute"}
+      <Status call={call} />
+      <div className="flex flex-wrap items-center gap-2 border-t border-line px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <p className="mr-auto text-sm font-semibold tabular-nums">{elapsed}</p>
+        <button type="button" className={buttonClass} aria-pressed={call.mic !== "live"} onClick={() => void useOrbit.getState().toggleMute()}>
+          {call.mic === "live" ? <Mic className="size-4" /> : <MicOff className="size-4" />}
+          {call.mic === "live" ? "Mute" : "Unmute"}
         </button>
-        <button type="button" aria-pressed={Boolean(you?.video)} className={controlClass} onClick={() => useOrbit.getState().toggleSelfVideo()}>
-          {you?.video ? "Stop video" : "Start video"}
-        </button>
-        {call.mode !== "direct" && !call.simulated ? (
-          <button type="button" className={controlClass} onClick={() => useOrbit.getState().simulateJoins()}>
-            Someone joins
+        {call.kind === "video" ? (
+          <button type="button" className={buttonClass} aria-pressed={call.camera !== "live"} onClick={() => void useOrbit.getState().toggleCamera()}>
+            {call.camera === "live" ? <Video className="size-4" /> : <VideoOff className="size-4" />}
+            {call.camera === "live" ? "Camera off" : "Camera on"}
           </button>
         ) : null}
-        {call.mode !== "direct" && call.participants.some((person) => person.userId !== YOU) ? (
-          <button type="button" className={controlClass} onClick={() => useOrbit.getState().simulateLeave()}>
-            Someone leaves
+        {(call.mic === "denied" || call.mic === "unavailable") && (
+          <button type="button" className={buttonClass} onClick={() => void useOrbit.getState().retryDevice("mic")}>
+            Retry microphone
           </button>
-        ) : null}
-        {call.youStarted && call.mode !== "direct" ? (
-          <button type="button" className={controlClass} onClick={() => useOrbit.getState().endCallForAll()}>
-            End for all
+        )}
+        {call.kind === "video" && (call.camera === "denied" || call.camera === "unavailable") ? (
+          <button type="button" className={buttonClass} onClick={() => void useOrbit.getState().retryDevice("camera")}>
+            Retry camera
           </button>
         ) : null}
         <button
           type="button"
-          className="ml-auto inline-flex h-11 items-center gap-1 rounded-md bg-danger px-3 text-sm font-semibold text-accent-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          onClick={() => useOrbit.getState().leaveCall()}
+          className="inline-flex h-11 items-center gap-1 rounded-md bg-danger px-3 text-sm font-semibold text-accent-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          onClick={() => useOrbit.getState().endCall()}
         >
           <PhoneOff className="size-4" aria-hidden="true" />
-          Leave
+          End call
         </button>
       </div>
-    </section>
+    </div>
+  );
+}
+
+function Status({ call }: { call: DemoCall }) {
+  const lines = [call.micDetail, call.cameraDetail].filter(Boolean);
+  if (lines.length === 0 && call.mic !== "requesting" && call.camera !== "requesting") return null;
+  return (
+    <div className="px-4 pb-2" role="status">
+      {call.mic === "requesting" ? <p className="text-sm">Requesting microphone…</p> : null}
+      {call.camera === "requesting" ? <p className="text-sm">Requesting camera…</p> : null}
+      {lines.map((line) => (
+        <p key={line} className="text-sm text-ink">
+          {line}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function SwitchDialog() {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/50 p-4">
+      <section role="dialog" aria-modal="true" aria-labelledby="switch-title" className="w-full max-w-md rounded-xl bg-paper p-5 text-ink shadow-pop">
+        <h2 id="switch-title" className="text-lg font-semibold">
+          You’re already in a call
+        </h2>
+        <p className="mt-2 text-sm text-ink-soft">End the current demo call before starting another. This does not contact anyone else.</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button type="button" className={buttonClass} onClick={() => useOrbit.getState().returnToCall()}>
+            Return to current call
+          </button>
+          <button
+            type="button"
+            className="inline-flex h-11 items-center rounded-md bg-danger px-3 text-sm font-semibold text-accent-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            onClick={() => useOrbit.getState().confirmCallSwitch()}
+          >
+            End current call and start new call
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
 function clock(ms: number) {
   const total = Math.max(0, Math.floor(ms / 1000));
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-const controlClass =
-  "inline-flex h-11 items-center rounded-md border border-line bg-paper px-3 text-sm font-medium text-ink hover:bg-line focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+const buttonClass =
+  "inline-flex h-11 items-center gap-1 rounded-md border border-line bg-paper px-3 text-sm font-medium text-ink hover:bg-line focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";

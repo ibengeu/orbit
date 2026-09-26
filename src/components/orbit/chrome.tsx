@@ -8,10 +8,12 @@ import {
   conversationTitle,
   conversationsOf,
   presenceLabel,
+  mentionBadge,
   unreadMeta,
   userById,
 } from "@/lib/orbit/derive";
 import { YOU } from "@/lib/orbit/seed";
+import { requestSignOut } from "@/lib/orbit/session";
 import { useOrbit } from "@/lib/orbit/store";
 import type { Conversation, Message } from "@/lib/orbit/types";
 import { cn } from "@/lib/utils";
@@ -53,12 +55,12 @@ export function WorkspaceRail() {
               <OrbitMark className="size-6" />
             </button>
           ) : (
-            <RailNotice key={workspace.id} label={workspace.name} message="Coming soon">
+            <RailNotice key={workspace.id} label={workspace.name} message="Only Orbit is available in this demo">
               <WorkspaceGlyph id={workspace.id} />
             </RailNotice>
           ),
         )}
-        <RailNotice label="Add a workspace" message="Not available in this demo">
+        <RailNotice label="Add a workspace" message="Only Orbit is available in this demo">
           <Plus className="size-5" />
         </RailNotice>
       </div>
@@ -125,6 +127,7 @@ export function Sidebar({ messages, onNavigate }: { messages: Message[]; onNavig
   const collapsed = useOrbit((state) => state.collapsed);
   const extraConversations = useOrbit((state) => state.extraConversations);
   const lastRead = useOrbit((state) => state.lastRead);
+  const activityReadIds = useOrbit((state) => state.activityReadIds);
   const conversations = conversationsOf(extraConversations).filter((item) => item.workspaceId === "orbit");
   const channels = conversations.filter((item) => item.kind === "channel");
   const dms = conversations.filter((item) => item.kind === "dm");
@@ -139,6 +142,9 @@ export function Sidebar({ messages, onNavigate }: { messages: Message[]; onNavig
     <nav aria-label="Sidebar" className="flex h-full min-h-0 w-full flex-col bg-plum-raised text-paper">
       <div className="flex items-center gap-2 px-3 py-3">
         <WorkspaceMenu name="Orbit" />
+        <span className="rounded-full bg-plum px-2 py-0.5 text-[0.65rem] font-semibold tracking-wide text-plum-muted uppercase">
+          Demo workspace
+        </span>
       </div>
       <div className="px-3 pb-2">
         <button
@@ -200,7 +206,10 @@ export function Sidebar({ messages, onNavigate }: { messages: Message[]; onNavig
               key={channel.id}
               conversation={channel}
               active={view === "conversation" && conversationId === channel.id}
-              meta={unreadMeta(messages, channel.id, lastRead[channel.id])}
+              meta={{
+                ...unreadMeta(messages, channel.id, lastRead[channel.id]),
+                mentions: mentionBadge(messages, channel.id, activityReadIds),
+              }}
               onClick={() => {
                 useOrbit.getState().openConversation(channel.id);
                 onNavigate?.();
@@ -223,7 +232,10 @@ export function Sidebar({ messages, onNavigate }: { messages: Message[]; onNavig
                 key={dm.id}
                 conversation={dm}
                 active={view === "conversation" && conversationId === dm.id}
-                meta={unreadMeta(messages, dm.id, lastRead[dm.id])}
+                meta={{
+                  ...unreadMeta(messages, dm.id, lastRead[dm.id]),
+                  mentions: mentionBadge(messages, dm.id, activityReadIds),
+                }}
                 onClick={() => {
                   useOrbit.getState().openConversation(dm.id);
                   onNavigate?.();
@@ -333,12 +345,13 @@ function ConversationButton({
 }: {
   conversation: Conversation;
   active: boolean;
-  meta: { unread: number; mention: boolean };
+  meta: { unread: number; mentions: number };
   onClick: () => void;
 }) {
   const presence = useOrbit((state) => state.presence);
   const title = conversationTitle(conversation);
   const unread = meta.unread > 0;
+  const flagged = unread || meta.mentions > 0;
   return (
     <button
       type="button"
@@ -348,7 +361,7 @@ function ConversationButton({
         "flex h-11 w-full items-center gap-2 rounded-md px-2 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper lg:h-8",
         active
           ? "bg-paper font-semibold text-ink"
-          : unread
+          : flagged
             ? "font-semibold text-paper hover:bg-plum-hover"
             : "font-medium text-plum-muted hover:bg-plum-hover hover:text-paper",
       )}
@@ -369,15 +382,20 @@ function ConversationButton({
       )}
       <span className="min-w-0 flex-1 truncate" title={title}>
         {title}
-        {unread ? <span className="sr-only">{meta.mention ? ", mention" : ", unread"}</span> : null}
+        {unread || meta.mentions > 0 ? (
+          <span className="sr-only">
+            {unread ? `, ${meta.unread} unread` : ""}
+            {meta.mentions > 0 ? `, ${meta.mentions} mentions` : ""}
+          </span>
+        ) : null}
       </span>
-      {unread ? (
+      {flagged ? (
         <span className="inline-flex items-center gap-1">
-          <span className="size-1.5 rounded-full bg-current" aria-hidden="true" />
-          {meta.mention ? (
-            <span className="rounded-sm bg-accent px-1 text-xs font-semibold text-accent-ink">@</span>
+          {unread ? <span className="size-1.5 rounded-full bg-current" aria-hidden="true" /> : null}
+          {meta.mentions > 0 ? (
+            <span className="rounded-sm bg-accent px-1 text-xs font-semibold text-accent-ink">@ {meta.mentions}</span>
           ) : null}
-          <span className="text-xs tabular-nums">{meta.unread}</span>
+          {unread ? <span className="text-xs tabular-nums">{meta.unread}</span> : null}
         </span>
       ) : null}
     </button>
@@ -464,7 +482,7 @@ export function ProfileMenu({ children }: { children: ReactNode }) {
             value={presence}
             onValueChange={(value) => useOrbit.getState().setPresence(value as typeof presence)}
           >
-            {(["online", "away", "offline"] as const).map((value) => (
+            {(["online", "away"] as const).map((value) => (
               <DropdownMenu.RadioItem
                 key={value}
                 value={value}
@@ -493,7 +511,7 @@ export function ProfileMenu({ children }: { children: ReactNode }) {
             Reset demo data
           </MenuAction>
           <MenuAction
-            onSelect={() => toast("You’re Rowan Hale on this device. Signing out isn’t connected.")}
+            onSelect={() => requestSignOut()}
           >
             Sign out
           </MenuAction>

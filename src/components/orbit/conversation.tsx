@@ -1,8 +1,7 @@
 import { useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
-import { Hash, Menu, Phone, Pin, Search, Users } from "lucide-react";
+import { Hash, Menu, Mic, Pin, Search, Users, Video } from "lucide-react";
 import { Avatar } from "@/components/orbit/avatar";
-import { CallColumn } from "@/components/orbit/call-stage";
 import { Composer } from "@/components/orbit/composer";
 import { MessageList } from "@/components/orbit/messages";
 import {
@@ -36,7 +35,6 @@ export function ConversationPane({ messages }: { messages: Message[] }) {
             Skip to composer
           </a>
           <ConversationHeader conversation={conversation} messages={messages} presence={presence} />
-          <CallColumn conversationId={conversation.id} />
         </>
       ) : (
         <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line px-3">
@@ -151,15 +149,7 @@ function ConversationHeader({
         </div>
       </div>
       <DetailsButton conversation={conversation} messages={messages} presence={presence} count={members.length} />
-      <button
-        type="button"
-        aria-label="Start a call"
-        onClick={() => useOrbit.getState().startCall(conversation.id)}
-        className="inline-flex h-11 min-w-11 items-center justify-center gap-1 rounded-md px-2 text-xs font-medium text-ink-soft hover:bg-line hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent lg:h-9"
-      >
-        <Phone className="size-4" aria-hidden="true" />
-        <span className={conversation.kind === "channel" ? "hidden sm:inline" : "sr-only"}>Start a call</span>
-      </button>
+      {conversation.kind === "dm" ? <CallButtons conversation={conversation} title={title} /> : null}
       <button
         type="button"
         aria-label={`Search ${conversation.kind === "channel" ? `#${conversation.name}` : title}`}
@@ -169,6 +159,37 @@ function ConversationHeader({
         <Search className="size-4" />
       </button>
     </header>
+  );
+}
+
+function CallButtons({ conversation, title }: { conversation: Conversation; title: string }) {
+  if (conversation.kind !== "dm") return null;
+  const count = memberIds(conversation).length;
+  const disabled = count > 8;
+  const reason = disabled ? "Calls are limited to 8 people in this demo." : undefined;
+  return (
+    <>
+      <button
+        type="button"
+        aria-label={`Voice call with ${title}`}
+        title={reason}
+        disabled={disabled}
+        onClick={() => useOrbit.getState().requestCall(conversation.id, "voice")}
+        className="inline-flex size-11 items-center justify-center rounded-md text-ink-soft hover:bg-line hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-40"
+      >
+        <Mic className="size-4" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        aria-label={`Video call with ${title}`}
+        title={reason}
+        disabled={disabled}
+        onClick={() => useOrbit.getState().requestCall(conversation.id, "video")}
+        className="inline-flex size-11 items-center justify-center rounded-md text-ink-soft hover:bg-line hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-40"
+      >
+        <Video className="size-4" aria-hidden="true" />
+      </button>
+    </>
   );
 }
 

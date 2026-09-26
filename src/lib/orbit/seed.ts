@@ -1,7 +1,9 @@
 import type { Conversation, Message, User, Workspace } from "@/lib/orbit/types";
 
-export const YOU = "rowan";
+export const YOU = "u_me";
 export const STORAGE_KEY = "orbit:v1";
+
+export const REACTIONS = ["👍", "❤️", "😂", "🎉", "👀", "🙌"] as const;
 
 export const EMOJIS = [
   "👍",
@@ -24,10 +26,10 @@ export const EMOJIS = [
 
 export const USERS: User[] = [
   {
-    id: "rowan",
-    name: "Rowan Hale",
-    handle: "rowan",
-    initials: "RH",
+    id: "u_me",
+    name: "Alex Morgan",
+    handle: "alex",
+    initials: "AM",
     title: "Product",
     presence: "online",
     status: "Launch desk",
@@ -59,7 +61,7 @@ export const USERS: User[] = [
   { id: "theo", name: "Theo Marlow", handle: "theo", initials: "TM", title: "Research", presence: "offline" },
 ];
 
-const ORBIT_MEMBERS = ["rowan", "priya", "noah", "jules", "lena", "samir", "avery", "kai"];
+const ORBIT_MEMBERS = ["u_me", "priya", "noah", "jules", "lena", "samir", "avery", "kai"];
 
 export const SEED_WORKSPACES: Workspace[] = [
   { id: "orbit", name: "Orbit", initials: "OR" },
@@ -119,25 +121,31 @@ export const SEED_CONVERSATIONS: Conversation[] = [
     kind: "dm",
     id: "dm-priya",
     workspaceId: "orbit",
-    participantIds: ["rowan", "priya"],
+    participantIds: ["u_me", "priya"],
   },
   {
     kind: "dm",
     id: "dm-noah",
     workspaceId: "orbit",
-    participantIds: ["rowan", "noah"],
+    participantIds: ["u_me", "noah"],
   },
   {
     kind: "dm",
     id: "dm-kai",
     workspaceId: "orbit",
-    participantIds: ["rowan", "kai"],
+    participantIds: ["u_me", "kai"],
+  },
+  {
+    kind: "dm",
+    id: "dm-avery",
+    workspaceId: "orbit",
+    participantIds: ["u_me", "avery"],
   },
   {
     kind: "dm",
     id: "dm-launch",
     workspaceId: "orbit",
-    participantIds: ["rowan", "jules", "lena", "avery"],
+    participantIds: ["u_me", "jules", "lena", "avery"],
     title: "Launch crew",
   },
   {
@@ -146,14 +154,14 @@ export const SEED_CONVERSATIONS: Conversation[] = [
     workspaceId: "lumen",
     name: "general",
     description: "A quiet second workspace, so switching is real.",
-    memberIds: ["rowan", "mina", "theo"],
+    memberIds: ["u_me", "mina", "theo"],
   },
 ];
 
 function stamp(daysAgo: number, hour: number, minute: number) {
-  const d = new Date();
-  d.setDate(d.getDate() - daysAgo);
-  d.setHours(hour, minute, 0, 0);
+  const d = new Date("2026-09-26T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() - daysAgo);
+  d.setUTCHours(hour, minute, 0, 0);
   return d.toISOString();
 }
 
@@ -179,7 +187,7 @@ export const SEED_MESSAGES: Message[] = [
   msg({
     id: "gen-checklist",
     conversationId: "general",
-    authorId: "rowan",
+    authorId: "u_me",
     createdAt: stamp(2, 11, 5),
     body: "Thanks. I’ll keep the checklist in #product so we aren’t hunting across channels the morning of.",
   }),
@@ -232,7 +240,7 @@ export const SEED_MESSAGES: Message[] = [
     authorId: "avery",
     createdAt: stamp(0, 9, 40),
     body: "Social is drafted, not scheduled. If we slip past noon I’ll pull the thread rather than let it go out half-true.",
-    reactions: [{ emoji: "👍", userIds: ["rowan", "jules"] }],
+    reactions: [{ emoji: "👍", userIds: ["u_me", "jules"] }],
   }),
   msg({
     id: "prod-scope",
@@ -244,14 +252,14 @@ export const SEED_MESSAGES: Message[] = [
   msg({
     id: "prod-notes",
     conversationId: "product",
-    authorId: "rowan",
+    authorId: "u_me",
     createdAt: stamp(1, 16, 5),
     body: "Agreed. Customer-facing notes are in the [launch checklist](https://example.com/orbit-checklist). I’ll trim anything that sounds like a *roadmap*, keep **the *launch* scope** tight, and leave the status line as `final`.",
   }),
   msg({
     id: "prod-draft",
     conversationId: "product",
-    authorId: "rowan",
+    authorId: "u_me",
     createdAt: stamp(1, 16, 42),
     body: "Wrote the what’s-new draft so we can stop passing the doc around.\n\nSearch finds messages and the replies inside a thread. Switching conversations keeps an unsent draft. Guest accounts are not in this post.\n\nIf a line sounds like a promise we can’t keep on Thursday, cut it. I’d rather ship a short note than a careful one that overreaches.",
   }),
@@ -260,7 +268,7 @@ export const SEED_MESSAGES: Message[] = [
     conversationId: "product",
     authorId: "jules",
     createdAt: stamp(0, 10, 14),
-    body: "@rowan can you confirm the checklist before 4? Legal wants the “what’s new” bullets, and Avery is holding the post until those are final.",
+    body: "@alex can you confirm the checklist before 4? Legal wants the “what’s new” bullets, and Avery is holding the post until those are final.",
     reactions: [{ emoji: "👀", userIds: ["avery"] }],
   }),
   msg({
@@ -276,7 +284,7 @@ export const SEED_MESSAGES: Message[] = [
     authorId: "noah",
     createdAt: stamp(1, 13, 10),
     body: "Reviewing the marketing hero. I tried a tighter crop so the product frame isn’t floating in paper. Look at frame “Launch / Hero B” before you comment on type.",
-    reactions: [{ emoji: "👀", userIds: ["lena", "rowan"] }],
+    reactions: [{ emoji: "👀", userIds: ["lena", "u_me"] }],
   }),
   msg({
     id: "design-r1",
@@ -297,7 +305,7 @@ export const SEED_MESSAGES: Message[] = [
   msg({
     id: "design-r3",
     conversationId: "design",
-    authorId: "rowan",
+    authorId: "u_me",
     parentId: "design-hero",
     createdAt: stamp(1, 13, 41),
     body: "Drop it on desktop. The headline already says what the screen is. Don’t add a second line to explain the picture.",
@@ -317,7 +325,7 @@ export const SEED_MESSAGES: Message[] = [
     parentId: "design-hero",
     createdAt: stamp(1, 14, 16),
     body: "Shipping Hero B. I’ll stop moving the frame.",
-    reactions: [{ emoji: "✅", userIds: ["rowan", "lena"] }],
+    reactions: [{ emoji: "✅", userIds: ["u_me", "lena"] }],
   }),
   msg({
     id: "design-type",
@@ -329,7 +337,7 @@ export const SEED_MESSAGES: Message[] = [
   msg({
     id: "design-accent",
     conversationId: "design",
-    authorId: "rowan",
+    authorId: "u_me",
     createdAt: stamp(1, 15, 20),
     body: "They can share one accent. The badge is a few characters. The button is the only solid control. If both yell, we shrink the badge, not the button.",
   }),
@@ -370,14 +378,21 @@ export const SEED_MESSAGES: Message[] = [
     authorId: "priya",
     createdAt: stamp(1, 12, 30),
     body: "Fixed in the worker. The guard is `if (attempt >= budget) return`. The client still retries once so a dead tab doesn’t lose the payment. Test is in the PR.",
-    reactions: [{ emoji: "✅", userIds: ["rowan", "jules"] }],
+    reactions: [{ emoji: "✅", userIds: ["u_me", "jules"] }],
   }),
   msg({
     id: "eng-notes",
     conversationId: "engineering",
-    authorId: "rowan",
+    authorId: "u_me",
     createdAt: stamp(1, 12, 44),
     body: "If that stays green, we don’t mention it in the launch notes. Quiet fixes can stay quiet.",
+  }),
+  msg({
+    id: "eng-mention",
+    conversationId: "engineering",
+    authorId: "priya",
+    createdAt: stamp(0, 11, 20),
+    body: "@alex the retry patch is in. Can you glance at the assertion before we call the bug done?",
   }),
   msg({
     id: "ann-date",
@@ -393,7 +408,7 @@ export const SEED_MESSAGES: Message[] = [
     createdAt: stamp(1, 9, 5),
     pinned: true,
     body: "Orbit opens to new teams Thursday, 10:00 ET. Shipping: channels, threads, and search. Not shipping: guest accounts. This pin stays through Friday.",
-    reactions: [{ emoji: "📌", userIds: ["jules", "rowan"] }],
+    reactions: [{ emoji: "📌", userIds: ["jules", "u_me"] }],
   }),
   msg({
     id: "ann-hours",
@@ -462,7 +477,7 @@ export const SEED_MESSAGES: Message[] = [
   msg({
     id: "dm-p2",
     conversationId: "dm-priya",
-    authorId: "rowan",
+    authorId: "u_me",
     createdAt: stamp(1, 16, 44),
     body: "Yes. Send the diff. If the test forces a 504 and asserts a single capture, I’m good.",
   }),
@@ -483,7 +498,7 @@ export const SEED_MESSAGES: Message[] = [
   msg({
     id: "dm-n2",
     conversationId: "dm-noah",
-    authorId: "rowan",
+    authorId: "u_me",
     createdAt: stamp(0, 9, 36),
     body: "Looks right. Don’t let the rail clip at 1440 — Lena already caught it once.",
   }),
@@ -511,9 +526,30 @@ export const SEED_MESSAGES: Message[] = [
   msg({
     id: "dm-k3",
     conversationId: "dm-kai",
-    authorId: "rowan",
+    authorId: "u_me",
     createdAt: stamp(0, 14, 26),
     body: "Search includes thread replies. Later is a saved list, not a reminder. You can say both in one sentence.",
+  }),
+  msg({
+    id: "dm-a1",
+    conversationId: "dm-avery",
+    authorId: "avery",
+    createdAt: stamp(1, 15, 10),
+    body: "I’m holding the launch post until you say the what’s-new lines are final. No surprises in the headline.",
+  }),
+  msg({
+    id: "dm-a2",
+    conversationId: "dm-avery",
+    authorId: "u_me",
+    createdAt: stamp(1, 15, 18),
+    body: "Leave it in draft. I’ll send the last line once legal is done, not before.",
+  }),
+  msg({
+    id: "dm-a3",
+    conversationId: "dm-avery",
+    authorId: "avery",
+    createdAt: stamp(0, 8, 40),
+    body: "Understood. I won’t schedule anything while the pin and the post can still disagree.",
   }),
   msg({
     id: "crew-1",
@@ -539,7 +575,7 @@ export const SEED_MESSAGES: Message[] = [
   msg({
     id: "crew-4",
     conversationId: "dm-launch",
-    authorId: "rowan",
+    authorId: "u_me",
     createdAt: stamp(1, 18, 20),
     body: "9:40 works. I’ll bring the checklist and nothing else.",
   }),
@@ -587,12 +623,13 @@ export const INITIAL_LAST_READ: Record<string, string> = {
   "dm-priya": latestIn("dm-priya"),
   "dm-noah": latestIn("dm-noah"),
   "dm-kai": justBefore("dm-k1"),
+  "dm-avery": latestIn("dm-avery"),
   "dm-launch": latestIn("dm-launch"),
   "lumen-general": latestIn("lumen-general"),
 };
 
 export const AVATAR_CLASS: Record<string, string> = {
-  rowan: "bg-avatar-rowan",
+  u_me: "bg-avatar-alex",
   priya: "bg-avatar-priya",
   noah: "bg-avatar-noah",
   jules: "bg-avatar-jules",
