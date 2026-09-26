@@ -34,22 +34,26 @@ async function provisionDemoWorkspaces(): Promise<ApiWorkspace[]> {
 async function loadConversationMessages(conversationId: string): Promise<ApiMessage[]> {
   const messages: ApiMessage[] = [];
   let cursor = 0;
+  let after: string | undefined;
   for (;;) {
-    const page = await listMessages(conversationId, { limit: 100, cursor, includeDeleted: true });
+    const page = await listMessages(conversationId, { limit: 100, cursor, after, includeDeleted: true });
     messages.push(...page.data);
     if (!page.nextCursor) return messages;
     cursor = Number(page.nextCursor);
+    after = page.nextPageToken ?? undefined;
   }
 }
 
 async function loadCallHistory(): Promise<ApiCall[]> {
   const calls: ApiCall[] = [];
   let cursor = 0;
+  let after: string | undefined;
   for (;;) {
-    const page = await listCalls({ limit: 100, cursor });
+    const page = await listCalls({ limit: 100, cursor, after });
     calls.push(...page.data);
     if (!page.nextCursor) return calls;
     cursor = Number(page.nextCursor);
+    after = page.nextPageToken ?? undefined;
   }
 }
 

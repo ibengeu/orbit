@@ -84,12 +84,13 @@ export function createConversation(input: { workspaceId: string; kind: "channel"
   return request<ApiConversation>(`/workspaces/${encodeURIComponent(workspaceId)}/conversations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 }
 
-export function listMessages(conversationId: string, options: { limit?: number; cursor?: number; includeDeleted?: boolean } = {}) {
+export function listMessages(conversationId: string, options: { limit?: number; cursor?: number; after?: string; includeDeleted?: boolean } = {}) {
   const query = new URLSearchParams();
   if (options.limit != null) query.set("limit", String(options.limit));
   if (options.cursor != null) query.set("cursor", String(options.cursor));
+  if (options.after != null) query.set("after", options.after);
   if (options.includeDeleted) query.set("includeDeleted", "true");
-  return request<{ data: ApiMessage[]; nextCursor: string | null; hasMore: boolean }>(`/conversations/${encodeURIComponent(conversationId)}/messages?${query}`);
+  return request<{ data: ApiMessage[]; nextCursor: string | null; nextPageToken?: string | null; hasMore: boolean }>(`/conversations/${encodeURIComponent(conversationId)}/messages?${query}`);
 }
 
 export function createMessage(input: { conversationId: string; body: string; parentId?: string; file?: File }) {
@@ -157,11 +158,12 @@ export function getCall(id: string) {
   return request<ApiCall>(`/calls/${encodeURIComponent(id)}`);
 }
 
-export function listCalls(options: { limit?: number; cursor?: number } = {}) {
+export function listCalls(options: { limit?: number; cursor?: number; after?: string } = {}) {
   const query = new URLSearchParams();
   if (options.limit != null) query.set("limit", String(options.limit));
   if (options.cursor != null) query.set("cursor", String(options.cursor));
-  return request<{ data: ApiCall[]; nextCursor: string | null; hasMore: boolean }>(`/me/calls?${query}`);
+  if (options.after != null) query.set("after", options.after);
+  return request<{ data: ApiCall[]; nextCursor: string | null; nextPageToken?: string | null; hasMore: boolean }>(`/me/calls?${query}`);
 }
 
 export function listSavedMessages() {

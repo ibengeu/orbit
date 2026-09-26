@@ -1,15 +1,14 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Bell, Bookmark, ChevronDown, Hash, House, MessageSquare, Plus, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar } from "@/components/orbit/avatar";
 import {
+  conversationBadges,
   conversationTitle,
   conversationsOf,
   presenceLabel,
-  mentionBadge,
-  unreadMeta,
   userById,
   workspacesOf,
 } from "@/lib/orbit/derive";
@@ -34,6 +33,8 @@ const SAMPLE_WORKSPACES = [
   { id: "lumen", name: "Lumen", live: false },
   { id: "field", name: "Field", live: false },
 ] as const;
+
+const EMPTY_BADGE = { unread: 0, mentions: 0 };
 
 export function WorkspaceRail() {
   const presence = useOrbit((state) => state.presence);
@@ -156,7 +157,14 @@ export function Sidebar({ messages, onNavigate }: { messages: Message[]; onNavig
   const extraConversations = useOrbit((state) => state.extraConversations);
   const lastRead = useOrbit((state) => state.lastRead);
   const activityReadIds = useOrbit((state) => state.activityReadIds);
-  const conversations = conversationsOf(extraConversations).filter((item) => item.workspaceId === workspaceId);
+  const conversations = useMemo(
+    () => conversationsOf(extraConversations).filter((item) => item.workspaceId === workspaceId),
+    [extraConversations, workspaceId],
+  );
+  const badges = useMemo(
+    () => conversationBadges(messages, conversations, lastRead, activityReadIds),
+    [messages, conversations, lastRead, activityReadIds],
+  );
   const workspaceName = workspacesOf(extraWorkspaces).find((item) => item.id === workspaceId)?.name ?? "Orbit";
   const channels = conversations.filter((item) => item.kind === "channel");
   const dms = conversations.filter((item) => item.kind === "dm");
@@ -225,7 +233,7 @@ export function Sidebar({ messages, onNavigate }: { messages: Message[]; onNavig
         <Section
           label="Channels"
           collapsed={collapsed.channels}
-          unread={channels.reduce((sum, channel) => sum + unreadMeta(messages, channel.id, lastRead[channel.id]).unread, 0)}
+          unread={channels.reduce((sum, channel) => sum + (badges.get(channel.id)?.unread ?? 0), 0)}
           containsActive={view === "conversation" && channels.some((channel) => channel.id === conversationId)}
           onToggle={() => useOrbit.getState().toggleSection("channels")}
           onAdd={() => useOrbit.getState().setChannelDialog(true)}
@@ -235,10 +243,7 @@ export function Sidebar({ messages, onNavigate }: { messages: Message[]; onNavig
               key={channel.id}
               conversation={channel}
               active={view === "conversation" && conversationId === channel.id}
-              meta={{
-                ...unreadMeta(messages, channel.id, lastRead[channel.id]),
-                mentions: mentionBadge(messages, channel.id, activityReadIds),
-              }}
+              meta={badges.get(channel.id) ?? EMPTY_BADGE}
               onClick={() => {
                 useOrbit.getState().openConversation(channel.id);
                 onNavigate?.();
@@ -249,7 +254,7 @@ export function Sidebar({ messages, onNavigate }: { messages: Message[]; onNavig
         <Section
           label="Direct messages"
           collapsed={collapsed.dms}
-          unread={dms.reduce((sum, dm) => sum + unreadMeta(messages, dm.id, lastRead[dm.id]).unread, 0)}
+          unread={dms.reduce((sum, dm) => sum + (badges.get(dm.id)?.unread ?? 0), 0)}
           containsActive={view === "conversation" && dms.some((dm) => dm.id === conversationId)}
           onToggle={() => useOrbit.getState().toggleSection("dms")}
         >
@@ -261,10 +266,7 @@ export function Sidebar({ messages, onNavigate }: { messages: Message[]; onNavig
                 key={dm.id}
                 conversation={dm}
                 active={view === "conversation" && conversationId === dm.id}
-                meta={{
-                  ...unreadMeta(messages, dm.id, lastRead[dm.id]),
-                  mentions: mentionBadge(messages, dm.id, activityReadIds),
-                }}
+                meta={badges.get(dm.id) ?? EMPTY_BADGE}
                 onClick={() => {
                   useOrbit.getState().openConversation(dm.id);
                   onNavigate?.();

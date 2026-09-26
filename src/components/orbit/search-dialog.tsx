@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Command } from "cmdk";
 import { Hash, MessageSquare, UserRound, X } from "lucide-react";
 import {
@@ -23,8 +23,16 @@ export function SearchDialog({ messages }: { messages: Message[] }) {
   const extraConversations = useOrbit((state) => state.extraConversations);
   const extraWorkspaces = useOrbit((state) => state.extraWorkspaces);
   const workspaceName = workspacesOf(extraWorkspaces).find((item) => item.id === workspaceId)?.name ?? "workspace";
-  const conversations = conversationsOf(extraConversations).filter((item) => item.workspaceId === workspaceId);
-  const scope = conversations.find((item) => item.id === scopeId) ?? null;
+  const conversations = useMemo(
+    () => conversationsOf(extraConversations).filter((item) => item.workspaceId === workspaceId),
+    [extraConversations, workspaceId],
+  );
+  const conversationsById = useMemo(() => new Map(conversations.map((item) => [item.id, item])), [conversations]);
+  const labelsByConversation = useMemo(
+    () => new Map(conversations.map((item) => [item.id, conversationLabel(item)])),
+    [conversations],
+  );
+  const scope = scopeId ? conversationsById.get(scopeId) ?? null : null;
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
   const [more, setMore] = useState({ channels: false, people: false, messages: false });
@@ -46,8 +54,8 @@ export function SearchDialog({ messages }: { messages: Message[] }) {
   }, [query, scopeId]);
 
   const q = debounced.trim().toLowerCase();
-  const channels = conversations.filter((item) => item.kind === "channel");
-  const people = peopleIn(conversations);
+  const channels = useMemo(() => conversations.filter((item) => item.kind === "channel"), [conversations]);
+  const people = useMemo(() => peopleIn(conversations), [conversations]);
   const channelHits = (q ? channels.filter((item) => includes(item.name, q) || includes(item.description, q)) : []).sort(
     (a, b) => rankText(`${a.name} ${a.description}`, q) - rankText(`${b.name} ${b.description}`, q),
   );
@@ -55,16 +63,11 @@ export function SearchDialog({ messages }: { messages: Message[] }) {
     ? people.filter((person) => includes(person.name, q) || includes(person.handle, q) || includes(person.title, q))
     : []
   ).sort((a, b) => rankText(a.name, q) - rankText(b.name, q));
-  const messageHits = (q
-    ? messages.filter((message) => {
-        if (scope && message.conversationId !== scope.id) return false;
-        if (!conversations.some((item) => item.id === message.conversationId)) return false;
-        const where = whereLabel(conversations, message.conversationId);
-        return includes(message.body, q) || includes(userById(message.authorId).name, q) || includes(where, q);
-      })
-    : []
-  ).sort((a, b) => rankText(a.body, q) - rankText(b.body, q) || b.createdAt.localeCompare(a.createdAt));
-  const recent = recentConversations(conversations, recentIds, conversationId);
+  const messageHits = useMemo(
+    () => searchMessages(messages, q, scope, labelsByConversation),
+    [q, messages, scope, labelsByConversation],
+  );
+  const recent = recentConversations(conversationsById, recentIds, conversationId);
   const nothing = Boolean(q) && channelHits.length + peopleHits.length + messageHits.length === 0;
 
   return (
@@ -157,7 +160,7 @@ export function SearchDialog({ messages }: { messages: Message[] }) {
             expanded={more.messages}
             onMore={() => setMore((state) => ({ ...state, messages: true }))}
             render={(message) => {
-              const where = whereLabel(conversations, message.conversationId);
+              const where = labelsByConversation.get(message.conversationId) ?? "Message";
               return (
                 <Command.Item
                   key={message.id}
@@ -253,7 +256,10 @@ function Highlight({ text, query }: { text: string; query: string }) {
 }
 
 function rankText(text: string, query: string) {
-  const value = text.toLowerCase();
+  return rankLowered(text.toLowerCase(), query);
+}
+
+function rankLowered(value: string, query: string) {
   if (!query) return 3;
   if (value === query) return 0;
   if (value.startsWith(query)) return 1;
@@ -269,9 +275,7 @@ function scopeName(conversation: Conversation) {
   return conversation.kind === "channel" ? `#${conversation.name}` : conversationTitle(conversation);
 }
 
-function whereLabel(conversations: Conversation[], id: string) {
-  const conversation = conversations.find((item) => item.id === id);
-  if (!conversation) return "Message";
+function conversationLabel(conversation: Conversation) {
   return conversation.kind === "channel" ? `#${conversation.name}` : conversationTitle(conversation);
 }
 
@@ -284,6 +288,28 @@ function peopleIn(conversations: Conversation[]) {
   return [...ids].filter((id) => id !== YOU).map((id) => userById(id));
 }
 
+function searchMessages(
+  messages: Message[],
+  query: string,
+  scope: Conversation | null,
+  labelsByConversation: Map<string, string>,
+) {
+  if (!query) return [];
+  const scored: Array<{ message: Message; rank: number }> = [];
+  for (const message of messages) {
+    if (scope && message.conversationId !== scope.id) continue;
+    const where = labelsByConversation.get(message.conversationId);
+    if (where === undefined) continue;
+    const body = message.body.toLowerCase();
+    const author = userById(message.authorId).name.toLowerCase();
+    const label = where.toLowerCase();
+    if (!body.includes(query) && !author.includes(query) && !label.includes(query)) continue;
+    scored.push({ message, rank: rankLowered(body, query) });
+  }
+  scored.sort((a, b) => a.rank - b.rank || b.message.createdAt.localeCompare(a.message.createdAt));
+  return scored.map(({ message }) => message);
+}
+
 function dmFor(conversations: Conversation[], userId: string) {
   return (
     conversations.find((conversation) => conversation.kind === "dm" && !conversation.title && conversation.participantIds.includes(userId)) ??
@@ -291,11 +317,11 @@ function dmFor(conversations: Conversation[], userId: string) {
   );
 }
 
-function recentConversations(conversations: Conversation[], recentIds: string[], currentId: string) {
+function recentConversations(conversations: Map<string, Conversation>, recentIds: string[], currentId: string) {
   const ids = recentIds.length > 0 ? recentIds : [currentId, "general", "product", "design"];
   const unique = [...new Set(ids)];
   return unique
-    .map((id) => conversations.find((item) => item.id === id))
+    .map((id) => conversations.get(id))
     .filter((item): item is Conversation => Boolean(item))
     .slice(0, LIMIT);
 }

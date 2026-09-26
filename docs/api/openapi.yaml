@@ -115,6 +115,7 @@ paths:
       parameters:
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
         - { name: cursor, in: query, schema: { type: integer, minimum: 0, default: 0 }, description: Offset cursor returned by the previous response. }
+        - { name: after, in: query, schema: { type: string, maxLength: 512 }, description: Opaque keyset token returned by the previous response. When present, it selects the next page. }
         - { name: includeDeleted, in: query, schema: { type: boolean, default: false }, description: Include soft-deleted message markers for state synchronization. }
       responses:
         '200': { description: Paginated messages, content: { application/json: { schema: { $ref: '#/components/schemas/MessageCollection' } } } }
@@ -317,6 +318,7 @@ paths:
       parameters:
         - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
         - { name: cursor, in: query, schema: { type: integer, minimum: 0, default: 0 }, description: Offset cursor returned by the previous response. }
+        - { name: after, in: query, schema: { type: string, maxLength: 512 }, description: Opaque keyset token returned by the previous response. When present, it selects the next page. }
       responses:
         '200': { description: Paginated ended calls, content: { application/json: { schema: { $ref: '#/components/schemas/CallCollection' } } } }
         '400': { $ref: '#/components/responses/ValidationError' }
@@ -438,7 +440,7 @@ components:
       required: [id, conversationId, authorId, body, createdAt, reactions, version]
       properties: { id: { type: string }, conversationId: { type: string }, authorId: { type: string }, body: { type: string }, parentId: { type: string }, createdAt: { type: string, format: date-time }, editedAt: { type: string, format: date-time }, deletedAt: { type: string, format: date-time }, reactions: { type: array, items: { $ref: '#/components/schemas/Reaction' } }, attachments: { type: array, items: { $ref: '#/components/schemas/Attachment' } }, version: { type: integer } }
     Attachment: { type: object, required: [id, name, size], properties: { id: { type: string }, name: { type: string }, size: { type: integer, minimum: 1, maximum: 10485760 } } }
-    MessageCollection: { type: object, required: [data, hasMore], properties: { data: { type: array, items: { $ref: '#/components/schemas/Message' } }, nextCursor: { type: [string, 'null'] }, hasMore: { type: boolean } } }
+    MessageCollection: { type: object, required: [data, hasMore], properties: { data: { type: array, items: { $ref: '#/components/schemas/Message' } }, nextCursor: { type: [string, 'null'], description: Legacy offset cursor. }, nextPageToken: { type: [string, 'null'], description: Opaque keyset cursor for new clients. }, hasMore: { type: boolean } } }
     CreateMessage: { type: object, required: [body], properties: { body: { type: string, minLength: 1, maxLength: 4000 }, parentId: { type: [string, 'null'] } }, additionalProperties: false }
     CreateMessageWithFile:
       type: object
@@ -471,7 +473,7 @@ components:
     CreateCall: { type: object, required: [kind], properties: { kind: { type: string, enum: [voice, video] } }, additionalProperties: false }
     CallUpdate: { type: object, required: [status], properties: { status: { type: string, enum: [lobby, active, ended] } }, additionalProperties: false }
     Call: { type: object, required: [id, conversationId, kind, status], properties: { id: { type: string }, conversationId: { type: string }, kind: { type: string, enum: [voice, video] }, status: { type: string, enum: [lobby, active, ended] }, startedAt: { type: string, format: date-time }, endedAt: { type: string, format: date-time }, durationSec: { type: integer } } }
-    CallCollection: { type: object, required: [data, nextCursor, hasMore], properties: { data: { type: array, items: { $ref: '#/components/schemas/Call' } }, nextCursor: { type: [string, 'null'] }, hasMore: { type: boolean } } }
+    CallCollection: { type: object, required: [data, nextCursor, hasMore], properties: { data: { type: array, items: { $ref: '#/components/schemas/Call' } }, nextCursor: { type: [string, 'null'], description: Legacy offset cursor. }, nextPageToken: { type: [string, 'null'], description: Opaque keyset cursor for new clients. }, hasMore: { type: boolean } } }
     Problem:
       type: object
       required: [type, title, status, detail, instance]

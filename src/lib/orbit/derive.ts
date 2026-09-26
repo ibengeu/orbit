@@ -90,6 +90,15 @@ export function replyCount(messages: Message[], parentId: string) {
   return threadReplies(messages, parentId).length;
 }
 
+export function replyCountsByParent(messages: Message[]) {
+  const counts = new Map<string, number>();
+  for (const message of messages) {
+    if (!message.parentId) continue;
+    counts.set(message.parentId, (counts.get(message.parentId) ?? 0) + 1);
+  }
+  return counts;
+}
+
 export function unreadMeta(messages: Message[], conversationId: string, lastRead?: string) {
   const cutoff = lastRead ? new Date(lastRead).getTime() : 0;
   const fresh = messages.filter(
@@ -109,6 +118,39 @@ export function mentionBadge(messages: Message[], conversationId: string, readId
   ).length;
 }
 
+export type ConversationBadge = { unread: number; mentions: number };
+
+export function conversationBadges(
+  messages: Message[],
+  conversations: Conversation[],
+  lastRead: Record<string, string>,
+  activityReadIds: string[],
+) {
+  const badges = new Map<string, ConversationBadge>();
+  const cutoffs = new Map<string, number>();
+  for (const conversation of conversations) {
+    badges.set(conversation.id, { unread: 0, mentions: 0 });
+    cutoffs.set(conversation.id, lastRead[conversation.id] ? new Date(lastRead[conversation.id]!).getTime() : 0);
+  }
+  const activities = collectActivityItems(messages, (message) => countUnreadMessage(message, badges, cutoffs));
+  addUnreadMentions(activities, badges, new Set(activityReadIds));
+  return badges;
+}
+
+function countUnreadMessage(message: Message, badges: Map<string, ConversationBadge>, cutoffs: Map<string, number>) {
+  const badge = badges.get(message.conversationId);
+  if (!badge || message.system || message.authorId === YOU) return;
+  if (new Date(message.createdAt).getTime() > (cutoffs.get(message.conversationId) ?? 0)) badge.unread += 1;
+}
+
+function addUnreadMentions(items: ActivityItem[], badges: Map<string, ConversationBadge>, read: Set<string>) {
+  for (const item of items) {
+    if (item.kind !== "mention" || read.has(item.id)) continue;
+    const badge = badges.get(item.conversationId);
+    if (badge) badge.mentions += 1;
+  }
+}
+
 export type MessageGroup = {
   id: string;
   authorId: string;
@@ -120,18 +162,16 @@ export function groupMessages(messages: Message[]): MessageGroup[] {
   for (const message of messages) {
     const last = groups[groups.length - 1];
     const prev = last?.messages[last.messages.length - 1];
-    const close =
-      prev &&
-      last &&
-      !message.system &&
-      !prev.system &&
-      last.authorId === message.authorId &&
-      new Date(message.createdAt).getTime() - new Date(prev.createdAt).getTime() < FIVE_MINUTES &&
-      new Date(message.createdAt).toDateString() === new Date(prev.createdAt).toDateString();
-    if (close && last) last.messages.push(message);
+    if (canGroupMessage(last, prev, message) && last) last.messages.push(message);
     else groups.push({ id: message.id, authorId: message.authorId, messages: [message] });
   }
   return groups;
+}
+
+function canGroupMessage(last: MessageGroup | undefined, prev: Message | undefined, message: Message) {
+  if (!last || !prev || message.system || prev.system || last.authorId !== message.authorId) return false;
+  const closeInTime = new Date(message.createdAt).getTime() - new Date(prev.createdAt).getTime() < FIVE_MINUTES;
+  return closeInTime && new Date(message.createdAt).toDateString() === new Date(prev.createdAt).toDateString();
 }
 
 export function dayLabel(iso: string) {
@@ -195,24 +235,44 @@ export type ActivityItem = {
 };
 
 export function activityItems(messages: Message[]): ActivityItem[] {
-  const participated = new Set(
-    messages.filter((message) => message.authorId === YOU && message.parentId).map((message) => message.parentId as string),
-  );
-  const items: ActivityItem[] = [];
+  return collectActivityItems(messages);
+}
+
+function collectActivityItems(messages: Message[], visitMessage?: (message: Message) => void) {
+  const participated = new Set<string>();
   for (const message of messages) {
-    if (message.authorId === YOU) continue;
-    const handle = userById(YOU).handle;
-    const mention = new RegExp(`@${handle}\\b`, "i").test(message.body);
-    const threadUpdate = Boolean(message.parentId && (participated.has(message.parentId) || mention));
-    if (!mention && !threadUpdate) continue;
-    items.push({
-      id: message.id,
-      kind: mention ? "mention" : "thread",
-      message,
-      conversationId: message.conversationId,
-    });
+    if (message.authorId === YOU && message.parentId) participated.add(message.parentId);
   }
-  return items.sort((a, b) => b.message.createdAt.localeCompare(a.message.createdAt)).slice(0, 8);
+
+  const items: ActivityItem[] = [];
+  const mentionPattern = new RegExp(`@${userById(YOU).handle}\\b`, "i");
+  for (const message of messages) {
+    visitMessage?.(message);
+    const item = activityForMessage(message, participated, mentionPattern);
+    if (item) insertRecentActivity(items, item);
+  }
+  return items;
+}
+
+function activityForMessage(message: Message, participated: Set<string>, mentionPattern: RegExp): ActivityItem | null {
+  if (message.authorId === YOU) return null;
+  const mention = mentionPattern.test(message.body);
+  const threadUpdate = Boolean(message.parentId && (participated.has(message.parentId) || mention));
+  if (!mention && !threadUpdate) return null;
+  return {
+    id: message.id,
+    kind: mention ? "mention" : "thread",
+    message,
+    conversationId: message.conversationId,
+  };
+}
+
+function insertRecentActivity(items: ActivityItem[], item: ActivityItem) {
+  let index = 0;
+  while (index < items.length && items[index]!.message.createdAt >= item.message.createdAt) index += 1;
+  if (index >= 8) return;
+  items.splice(index, 0, item);
+  if (items.length > 8) items.pop();
 }
 
 export function snippet(body: string, max = 140) {

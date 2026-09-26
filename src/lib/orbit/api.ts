@@ -235,43 +235,69 @@ function toDate(value: unknown) {
 }
 
 async function seedDemoWorkspace(context: OrbitApiContext, templateId: "orbit" | "lumen") {
-  for (const item of SEED_CONVERSATIONS.filter((entry) => entry.workspaceId === templateId)) {
-    await seedDemoConversation(context, item);
+  const conversations = SEED_CONVERSATIONS.filter((entry) => entry.workspaceId === templateId);
+  const conversationRows = conversations.map((item) => [
+    context.userId,
+    item.id,
+    item.workspaceId,
+    item.kind,
+    item.kind === "channel" ? item.name : null,
+    item.kind === "channel" ? item.description : null,
+    JSON.stringify((item.kind === "channel" ? item.memberIds : item.participantIds).map((id) => id === YOU ? context.userId : id)),
+    item.kind === "dm" ? item.title ?? null : null,
+  ]);
+  if (conversationRows.length) {
+    await context.sql.query(
+      "insert into orbit_conversations (owner_id, id, workspace_id, kind, name, description, participant_ids, title) values " +
+        sqlValues(conversationRows, new Set([6])) + " on conflict do nothing",
+      conversationRows.flat(),
+    );
   }
-  const conversationIds = new Set(SEED_CONVERSATIONS.filter((item) => item.workspaceId === templateId).map((item) => item.id));
-  for (const item of SEED_MESSAGES.filter((entry) => conversationIds.has(entry.conversationId))) {
-    await seedDemoMessage(context, item);
+
+  const conversationIds = new Set(conversations.map((item) => item.id));
+  const messages = SEED_MESSAGES.filter((entry) => conversationIds.has(entry.conversationId));
+  const messageRows = messages.map((item) => [
+    context.userId,
+    item.id,
+    item.conversationId,
+    item.authorId === YOU ? context.userId : item.authorId,
+    item.body,
+    item.parentId ?? null,
+    item.createdAt,
+  ]);
+  if (messageRows.length) {
+    await context.sql.query(
+      "insert into orbit_messages (owner_id, id, conversation_id, author_id, body, parent_id, created_at) values " +
+        sqlValues(messageRows) + " on conflict do nothing",
+      messageRows.flat(),
+    );
+  }
+
+  const reactionRows = messages.flatMap((item) => item.reactions.flatMap((reaction) =>
+    reaction.userIds.map((userId) => [context.userId, item.id, userId === YOU ? context.userId : userId, reaction.emoji]),
+  ));
+  if (reactionRows.length) {
+    await context.sql.query(
+      "insert into orbit_reactions (owner_id, message_id, user_id, emoji, created_at) values " +
+        reactionValues(reactionRows) + " on conflict do nothing",
+      reactionRows.flat(),
+    );
   }
 }
 
-async function seedDemoConversation(context: OrbitApiContext, item: (typeof SEED_CONVERSATIONS)[number]) {
-  await context.sql.query(
-    `insert into orbit_conversations
-      (owner_id, id, workspace_id, kind, name, description, participant_ids, title)
-     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8) on conflict do nothing`,
-    [context.userId, item.id, item.workspaceId, item.kind, item.kind === "channel" ? item.name : null,
-      item.kind === "channel" ? item.description : null,
-      JSON.stringify((item.kind === "channel" ? item.memberIds : item.participantIds).map((id) => id === YOU ? context.userId : id)),
-      item.kind === "dm" ? item.title ?? null : null],
-  );
+function sqlValues(rows: unknown[][], jsonColumns = new Set<number>()) {
+  // OWASP A07:2025 Injection. Bind fixture values so message text cannot become executable SQL.
+  let parameter = 1;
+  return rows.map((row) => "(" + row.map((_, index) => "$" + parameter++ + (jsonColumns.has(index) ? "::jsonb" : "")).join(", ") + ")").join(", ");
 }
 
-async function seedDemoMessage(context: OrbitApiContext, item: (typeof SEED_MESSAGES)[number]) {
-  await context.sql.query(
-    `insert into orbit_messages
-      (owner_id, id, conversation_id, author_id, body, parent_id, created_at)
-     values ($1, $2, $3, $4, $5, $6, $7) on conflict do nothing`,
-    [context.userId, item.id, item.conversationId, item.authorId === YOU ? context.userId : item.authorId,
-      item.body, item.parentId ?? null, item.createdAt],
-  );
-  for (const reaction of item.reactions) {
-    for (const userId of reaction.userIds) {
-      await context.sql.query(
-        "insert into orbit_reactions (owner_id, message_id, user_id, emoji) values ($1, $2, $3, $4) on conflict do nothing",
-        [context.userId, item.id, userId === YOU ? context.userId : userId, reaction.emoji],
-      );
-    }
-  }
+function reactionValues(rows: unknown[][]) {
+  // OWASP A07:2025 Injection. Bind fixture fields; only the numeric row index shapes the timestamp SQL.
+  let parameter = 1;
+  return rows.map((row, index) => {
+    const values = row.map(() => "$" + parameter++).join(", ");
+    return "(" + values + ", CURRENT_TIMESTAMP + (" + index + " * interval '1 microsecond'))";
+  }).join(", ");
 }
 
 async function workspace(context: OrbitApiContext, id: string) {
@@ -338,10 +364,44 @@ async function message(context: OrbitApiContext, id: string) {
   };
 }
 
-function pageParams(request: Request) {
+type PageAnchor = { createdAt: string; id: string };
+type PageParams = { limit: number; cursor: number; after: PageAnchor | null; includeDeleted: boolean };
+
+function encodePageToken(createdAt: unknown, id: string) {
+  const timestamp = createdAt instanceof Date ? createdAt.toISOString() : String(createdAt);
+  return Buffer.from(JSON.stringify({ createdAt: timestamp, id }), "utf8").toString("base64url");
+}
+
+function decodePageToken(value: string): PageAnchor | null {
+  if (value.length > 512 || !/^[A-Za-z0-9_-]+$/.test(value)) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as Partial<PageAnchor> | null;
+    return isPageAnchor(parsed) ? { createdAt: parsed.createdAt, id: parsed.id } : null;
+  } catch {
+    return null;
+  }
+}
+
+function isPageAnchor(value: unknown): value is PageAnchor {
+  if (!value || typeof value !== "object") return false;
+  const anchor = value as Partial<PageAnchor>;
+  return typeof anchor.createdAt === "string" &&
+    isPageTimestamp(anchor.createdAt) &&
+    typeof anchor.id === "string" &&
+    anchor.id.length > 0 &&
+    anchor.id.length <= 120;
+}
+
+function isPageTimestamp(value: string) {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/.test(value) &&
+    Number.isFinite(Date.parse(value));
+}
+
+function pageParams(request: Request): PageParams | Response {
   const url = new URL(request.url);
   const limitText = url.searchParams.get("limit");
   const cursorText = url.searchParams.get("cursor");
+  const afterText = url.searchParams.get("after");
   const deletedText = url.searchParams.get("includeDeleted");
   const limit = limitText === null ? 50 : Number(limitText);
   const cursor = cursorText === null ? 0 : Number(cursorText);
@@ -355,12 +415,19 @@ function pageParams(request: Request) {
       errors: [{ pointer: "/cursor", detail: "Expected a non-negative whole number." }],
     });
   }
+  // OWASP A04:2025 Insecure Design. Reject malformed page tokens before their values reach SQL.
+  const after = afterText === null ? null : decodePageToken(afterText);
+  if (afterText !== null && !after) {
+    return problem(400, "validation-error", "Request validation failed", "The after query parameter is invalid.", request, {
+      errors: [{ pointer: "/after", detail: "Expected a valid page token returned by the previous response." }],
+    });
+  }
   if (deletedText !== null && !["true", "false"].includes(deletedText)) {
     return problem(400, "validation-error", "Request validation failed", "The includeDeleted query parameter is invalid.", request, {
       errors: [{ pointer: "/includeDeleted", detail: "Expected true or false." }],
     });
   }
-  return { limit, cursor, includeDeleted: deletedText === "true" };
+  return { limit, cursor, after, includeDeleted: deletedText === "true" };
 }
 
 function invalidPageNumber(text: string | null, min: number, max: number) {
@@ -485,19 +552,103 @@ async function handleWorkspaces(request: Request, context: OrbitApiContext, part
 async function listConversationMessages(request: Request, context: OrbitApiContext, conversationId: string) {
   const pagination = pageParams(request);
   if (pagination instanceof Response) return pagination;
-  const { limit, cursor, includeDeleted } = pagination;
-  const rows = await context.sql.query<{ id: string }>(
-    `select id from orbit_messages where owner_id = $1 and conversation_id = $2
-     and ($3::boolean or deleted_at is null)
-     order by created_at desc offset $4 limit $5`,
+  const { limit, cursor } = pagination;
+  const rows = await selectMessagePage(context, conversationId, pagination);
+  const ids = rows.map((row) => String(row.id));
+  const { reactions, attachments } = await fetchMessageDetails(context, ids);
+  const reactionsByMessage = reactionsByMessageId(reactions);
+  const attachmentsByMessage = attachmentsByMessageId(attachments);
+  const data = rows.map((row) => serializeMessageRow(row, reactionsByMessage, attachmentsByMessage));
+  const last = rows.at(-1);
+  return json({
+    data,
+    nextCursor: data.length === limit ? String(cursor + data.length) : null,
+    nextPageToken: data.length === limit && last ? encodePageToken(last.page_created_at, String(last.id)) : null,
+    hasMore: data.length === limit,
+  });
+}
+
+async function selectMessagePage(context: OrbitApiContext, conversationId: string, pagination: PageParams) {
+  const { limit, cursor, after, includeDeleted } = pagination;
+  const columns = `select id, conversation_id, author_id, body, parent_id, created_at, edited_at, deleted_at, version,
+    to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as page_created_at
+    from orbit_messages where owner_id = $1 and conversation_id = $2
+    and ($3::boolean or deleted_at is null)`;
+  if (after) {
+    return context.sql.query<JsonObject>(
+      `${columns} and (created_at, id) < ($4::timestamptz, $5::text) order by created_at desc, id desc limit $6`,
+      [context.userId, conversationId, includeDeleted, after.createdAt, after.id, limit],
+    );
+  }
+  return context.sql.query<JsonObject>(
+    `${columns} order by created_at desc, id desc offset $4 limit $5`,
     [context.userId, conversationId, includeDeleted, cursor, limit],
   );
-  const data = [];
-  for (const row of rows) {
-    const item = await message(context, row.id);
-    if (item) data.push(item);
+}
+
+async function fetchMessageDetails(context: OrbitApiContext, ids: string[]): Promise<{
+  reactions: Array<{ message_id: string; emoji: string; user_id: string }>;
+  attachments: Array<{ message_id: string; id: string; name: string; size_bytes: number }>;
+}> {
+  if (ids.length === 0) return { reactions: [], attachments: [] };
+  const [reactions, attachments] = await Promise.all([
+    context.sql.query<{ message_id: string; emoji: string; user_id: string }>(
+      "select message_id, emoji, user_id from orbit_reactions where owner_id = $1 and message_id = any($2::text[]) order by created_at asc",
+      [context.userId, ids],
+    ),
+    context.sql.query<{ message_id: string; id: string; name: string; size_bytes: number }>(
+      "select message_id, id, name, size_bytes from orbit_message_attachments where owner_id = $1 and message_id = any($2::text[]) order by message_id, id",
+      [context.userId, ids],
+    ),
+  ]);
+  return { reactions, attachments };
+}
+
+function reactionsByMessageId(reactions: Array<{ message_id: string; emoji: string; user_id: string }>) {
+  const groupedByMessage = new Map<string, Map<string, string[]>>();
+  for (const reaction of reactions) {
+    let grouped = groupedByMessage.get(reaction.message_id);
+    if (!grouped) {
+      grouped = new Map();
+      groupedByMessage.set(reaction.message_id, grouped);
+    }
+    const users = grouped.get(reaction.emoji) ?? [];
+    users.push(reaction.user_id);
+    grouped.set(reaction.emoji, users);
   }
-  return json({ data, nextCursor: data.length === limit ? String(cursor + data.length) : null, hasMore: data.length === limit });
+  return groupedByMessage;
+}
+
+function attachmentsByMessageId(attachments: Array<{ message_id: string; id: string; name: string; size_bytes: number }>) {
+  const grouped = new Map<string, Array<{ id: string; name: string; size: number }>>();
+  for (const attachment of attachments) {
+    const items = grouped.get(attachment.message_id) ?? [];
+    items.push({ id: attachment.id, name: attachment.name, size: Number(attachment.size_bytes) });
+    grouped.set(attachment.message_id, items);
+  }
+  return grouped;
+}
+
+function serializeMessageRow(
+  row: JsonObject,
+  reactionsByMessage: Map<string, Map<string, string[]>>,
+  attachmentsByMessage: Map<string, Array<{ id: string; name: string; size: number }>>,
+) {
+  const grouped = reactionsByMessage.get(String(row.id));
+  const files = attachmentsByMessage.get(String(row.id));
+  return {
+    id: String(row.id),
+    conversationId: String(row.conversation_id),
+    authorId: String(row.author_id),
+    body: String(row.body),
+    ...(row.parent_id == null ? {} : { parentId: String(row.parent_id) }),
+    createdAt: toDate(row.created_at),
+    ...(row.edited_at == null ? {} : { editedAt: toDate(row.edited_at) }),
+    ...(row.deleted_at == null ? {} : { deletedAt: toDate(row.deleted_at) }),
+    reactions: grouped ? [...grouped].map(([emoji, userIds]) => ({ emoji, userIds })) : [],
+    ...(files?.length ? { attachments: files } : {}),
+    version: Number(row.version),
+  };
 }
 
 async function createConversationMessage(request: Request, context: OrbitApiContext, conversationId: string) {
@@ -747,12 +898,26 @@ async function listSavedMessages(context: OrbitApiContext) {
 async function listEndedCalls(request: Request, context: OrbitApiContext) {
   const pagination = pageParams(request);
   if (pagination instanceof Response) return pagination;
-  const { limit, cursor } = pagination;
-  const rows = await context.sql.query<JsonObject>(
-    "select id, conversation_id, kind, status, started_at, ended_at, duration_sec from orbit_calls where owner_id = $1 and status = 'ended' and started_at is not null order by ended_at desc, id desc offset $2 limit $3",
-    [context.userId, cursor, limit],
-  );
-  return json({ data: rows.map(serializeCall), nextCursor: rows.length === limit ? String(cursor + rows.length) : null, hasMore: rows.length === limit });
+  const { limit, cursor, after } = pagination;
+  const columns = `select id, conversation_id, kind, status, started_at, ended_at, duration_sec,
+    to_char(ended_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as page_ended_at
+    from orbit_calls where owner_id = $1 and status = 'ended' and started_at is not null`;
+  const rows = after
+    ? await context.sql.query<JsonObject>(
+        `${columns} and (ended_at, id) < ($2::timestamptz, $3::text) order by ended_at desc, id desc limit $4`,
+        [context.userId, after.createdAt, after.id, limit],
+      )
+    : await context.sql.query<JsonObject>(
+        `${columns} order by ended_at desc, id desc offset $2 limit $3`,
+        [context.userId, cursor, limit],
+      );
+  const last = rows.at(-1);
+  return json({
+    data: rows.map(serializeCall),
+    nextCursor: rows.length === limit ? String(cursor + rows.length) : null,
+    nextPageToken: rows.length === limit && last ? encodePageToken(last.page_ended_at, String(last.id)) : null,
+    hasMore: rows.length === limit,
+  });
 }
 
 async function handleMe(request: Request, context: OrbitApiContext, parts: string[]) {

@@ -70,7 +70,7 @@ test("scoped search returns messages from the active workspace", async () => {
   page.setDefaultTimeout(4000);
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     await page.locator("#composer").waitFor();
     await page.getByRole("button", { name: "Lumen", exact: true }).click();
     await page.getByRole("button", { name: "Search #general" }).click();
@@ -182,7 +182,7 @@ test("search names the open workspace and saved messages stay clickable", async 
   page.setDefaultTimeout(15000);
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     await page.locator("#composer").waitFor();
     await page.getByRole("button", { name: "Lumen", exact: true }).click();
     await page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: /Search/ }).click();
@@ -368,6 +368,32 @@ test("a thread reply persists with its parent message", async () => {
     await page.reload({ waitUntil: "domcontentloaded" });
     await page.locator("#msg-gen-checklist").getByRole("button", { name: /reply/ }).click();
     await page.getByText(reply).waitFor();
+  } finally {
+    await context.close();
+  }
+});
+
+test("message and mention counts stay visible in their public controls", async () => {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const page = await context.newPage();
+  page.setDefaultTimeout(15000);
+  try {
+    await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
+    const sidebar = page.getByRole("navigation", { name: "Sidebar" });
+    await sidebar.getByRole("button", { name: /product.*1 mentions/ }).waitFor();
+
+    await sidebar.getByRole("button", { name: "Activity" }).click();
+    await page.getByRole("button", { name: "Mark all read" }).click();
+    await page.waitForFunction(() => {
+      const product = [...document.querySelectorAll("nav[aria-label='Sidebar'] button")].find((button) =>
+        button.querySelector("span[title='product']"),
+      );
+      return Boolean(product && !product.textContent?.includes("mentions"));
+    });
+
+    await sidebar.getByRole("button", { name: /^design/ }).click();
+    await page.locator("#msg-design-hero").getByRole("button", { name: "5 replies" }).waitFor();
   } finally {
     await context.close();
   }

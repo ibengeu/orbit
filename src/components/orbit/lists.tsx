@@ -1,10 +1,13 @@
 import { Menu } from "lucide-react";
+import { useMemo } from "react";
 import type { ReactNode } from "react";
 import { Avatar } from "@/components/orbit/avatar";
 import { activityItems, conversationById, conversationTitle, conversationsOf, snippet, timeLabel, userById } from "@/lib/orbit/derive";
 import { SEED_MESSAGES } from "@/lib/orbit/seed";
 import { useOrbit } from "@/lib/orbit/store";
 import type { Message } from "@/lib/orbit/types";
+
+const SEED_MESSAGES_BY_ID = new Map(SEED_MESSAGES.map((message) => [message.id, message]));
 
 export function ActivityView({ messages }: { messages: Message[] }) {
   const extra = useOrbit((state) => state.extraConversations);
@@ -76,11 +79,27 @@ export function LaterView({ messages }: { messages: Message[] }) {
   const created = useOrbit((state) => state.createdMessages);
   const edited = useOrbit((state) => state.edited);
   const extra = useOrbit((state) => state.extraConversations);
-  const conversations = conversationsOf(extra);
+  const savedIdSet = useMemo(() => new Set(savedIds), [savedIds]);
+  const messagesById = useMemo(() => {
+    const index = new Map<string, Message>();
+    for (const message of messages) {
+      if (savedIdSet.has(message.id)) index.set(message.id, message);
+    }
+    return index;
+  }, [messages, savedIdSet]);
+  const createdById = useMemo(() => {
+    const index = new Map<string, Message>();
+    for (const message of created) {
+      if (savedIdSet.has(message.id)) index.set(message.id, message);
+    }
+    return index;
+  }, [created, savedIdSet]);
+  const conversationsById = useMemo(() => new Map(conversationsOf(extra).map((item) => [item.id, item])), [extra]);
+  const deleted = useMemo(() => new Set(deletedIds.filter((id) => savedIdSet.has(id))), [deletedIds, savedIdSet]);
   const saved = savedIds.map((id) => {
-    const live = messages.find((message) => message.id === id);
-    const raw = live ?? created.find((message) => message.id === id) ?? SEED_MESSAGES.find((message) => message.id === id);
-    return { id, message: raw, deleted: deletedIds.includes(id) || !live };
+    const live = messagesById.get(id);
+    const raw = live ?? createdById.get(id) ?? SEED_MESSAGES_BY_ID.get(id);
+    return { id, message: raw, deleted: deleted.has(id) || !live };
   });
 
   return (
@@ -99,7 +118,7 @@ export function LaterView({ messages }: { messages: Message[] }) {
       ) : (
         <ul className="min-h-0 flex-1 overflow-y-auto">
           {saved.map(({ id, message, deleted }) => {
-            const conversation = message ? conversationById(conversations, message.conversationId) : undefined;
+            const conversation = message ? conversationsById.get(message.conversationId) : undefined;
             const where = conversation
               ? conversation.kind === "channel"
                 ? `#${conversation.name}`

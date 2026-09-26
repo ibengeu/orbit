@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { handleOrbitApi, handleOrbitApiWithIdentity } from "./api.ts";
+import { SEED_CONVERSATIONS, SEED_MESSAGES, YOU } from "./seed.ts";
 
 const databases: PGlite[] = [];
 
@@ -479,6 +480,123 @@ test("ended call history supports pagination", async () => {
   assert.equal(secondBody.hasMore, false);
 });
 
+test("ended call keyset pages preserve equal-time records", async () => {
+  const context = await createApiContext();
+  const workspace = await provisionWorkspace(context);
+  const conversations = await handleOrbitApi(
+    new Request(`https://optichat.test/api/v1/workspaces/${workspace.id}/conversations`),
+    context,
+  );
+  const conversation = (await conversations.json()).data[0] as { id: string };
+
+  for (const id of ["call-a", "call-b", "call-c"]) {
+    await context.sql.query(
+      "insert into orbit_calls (owner_id, id, conversation_id, kind, status, started_at, ended_at, duration_sec) values ($1, $2, $3, 'voice', 'ended', $4, $4, 0)",
+      [context.userId, id, conversation.id, "2026-01-01T00:00:00.000200Z"],
+    );
+  }
+
+  const first = await handleOrbitApi(new Request("https://optichat.test/api/v1/me/calls?limit=2"), context);
+  const firstBody = await first.json() as {
+    data: Array<{ id: string }>;
+    nextCursor: string | null;
+    nextPageToken: string | null;
+    hasMore: boolean;
+  };
+  assert.deepEqual(firstBody.data.map((item) => item.id), ["call-c", "call-b"]);
+  assert.ok(firstBody.nextPageToken);
+
+  const second = await handleOrbitApi(
+    new Request(`https://optichat.test/api/v1/me/calls?limit=2&cursor=${firstBody.nextCursor}&after=${encodeURIComponent(firstBody.nextPageToken)}`),
+    context,
+  );
+  const secondBody = await second.json() as { data: Array<{ id: string }>; hasMore: boolean };
+  assert.deepEqual(secondBody.data.map((item) => item.id), ["call-a"]);
+  assert.equal(secondBody.hasMore, false);
+});
+
+test("message keyset pages keep equal-timestamp messages and their details stable", async () => {
+  const context = await createApiContext();
+  const workspace = await provisionWorkspace(context);
+  const conversations = await handleOrbitApi(
+    new Request(`https://optichat.test/api/v1/workspaces/${workspace.id}/conversations`),
+    context,
+  );
+  const conversation = (await conversations.json()).data[0] as { id: string };
+  const messages = [
+    ["page-a", "2026-01-01T00:00:00.000100Z"],
+    ["page-b", "2026-01-01T00:00:00.000200Z"],
+    ["page-c", "2026-01-01T00:00:00.000200Z"],
+  ];
+
+  for (const [id, createdAt] of messages) {
+    await context.sql.query(
+      "insert into orbit_messages (owner_id, id, conversation_id, author_id, body, created_at) values ($1, $2, $3, $1, $4, $5)",
+      [context.userId, id, conversation.id, id, createdAt],
+    );
+  }
+  await context.sql.query(
+    "insert into orbit_reactions (owner_id, message_id, user_id, emoji) values ($1, 'page-b', $1, '👍')",
+    [context.userId],
+  );
+  await context.sql.query(
+    "insert into orbit_message_attachments (owner_id, id, message_id, name, media_type, size_bytes, content) values ($1, 'attachment-b', 'page-b', 'notes.txt', 'text/plain', 1, $2)",
+    [context.userId, Buffer.from("x")],
+  );
+  await context.sql.query(
+    "insert into orbit_workspaces (owner_id, id, name, initials) values ('user-2', 'other-workspace', 'Other', 'OT')",
+  );
+  await context.sql.query(
+    "insert into orbit_conversations (owner_id, id, workspace_id, kind, name) values ('user-2', 'other-room', 'other-workspace', 'channel', 'other-room')",
+  );
+  await context.sql.query(
+    "insert into orbit_messages (owner_id, id, conversation_id, author_id, body, created_at) values ('user-2', 'page-b', 'other-room', 'user-2', 'Private message', $1)",
+    ["2026-01-01T00:00:00.000200Z"],
+  );
+  await context.sql.query("insert into orbit_reactions (owner_id, message_id, user_id, emoji) values ('user-2', 'page-b', 'user-2', '🔒')");
+  await context.sql.query(
+    "insert into orbit_message_attachments (owner_id, id, message_id, name, media_type, size_bytes, content) values ('user-2', 'other-attachment', 'page-b', 'private.txt', 'text/plain', 1, $1)",
+    [Buffer.from("y")],
+  );
+  await context.sql.query("update orbit_messages set deleted_at = now() where owner_id = $1 and id = 'page-a'", [context.userId]);
+
+  const first = await handleOrbitApi(
+    new Request(`https://optichat.test/api/v1/conversations/${conversation.id}/messages?limit=2&includeDeleted=true`),
+    context,
+  );
+  const firstBody = await first.json() as {
+    data: Array<{ id: string; body: string; reactions: Array<{ emoji: string }>; attachments?: Array<{ name: string }>; deletedAt?: string }>;
+    nextCursor: string | null;
+    nextPageToken: string | null;
+    hasMore: boolean;
+  };
+
+  assert.equal(firstBody.hasMore, true);
+  assert.equal(firstBody.nextCursor, "2");
+  assert.ok(firstBody.nextPageToken);
+  assert.deepEqual(firstBody.data.map((item) => item.id), ["page-c", "page-b"]);
+  assert.equal(firstBody.data[1]?.body, "page-b");
+  assert.deepEqual(firstBody.data[1]?.reactions.map((item) => item.emoji), ["👍"]);
+  assert.deepEqual(firstBody.data[1]?.attachments?.map((item) => item.name), ["notes.txt"]);
+  assert.equal(Object.hasOwn(firstBody.data[1]?.attachments?.[0] ?? {}, "content"), false);
+
+  const second = await handleOrbitApi(
+    new Request(`https://optichat.test/api/v1/conversations/${conversation.id}/messages?limit=2&cursor=${firstBody.nextCursor}&after=${encodeURIComponent(firstBody.nextPageToken)}&includeDeleted=true`),
+    context,
+  );
+  const secondBody = await second.json() as {
+    data: Array<{ id: string; deletedAt?: string }>;
+    nextCursor: string | null;
+    nextPageToken: string | null;
+    hasMore: boolean;
+  };
+
+  assert.deepEqual(secondBody.data.map((item) => item.id), ["page-a"]);
+  assert.ok(secondBody.data[0]?.deletedAt);
+  assert.equal(secondBody.nextPageToken, null);
+  assert.equal(secondBody.hasMore, false);
+});
+
 test("invalid message pagination returns a field-level problem", async () => {
   const context = await createApiContext();
   const workspace = await provisionWorkspace(context);
@@ -499,6 +617,9 @@ test("invalid message pagination returns a field-level problem", async () => {
   const invalidDeleted = await handleOrbitApi(new Request(`https://optichat.test/api/v1/conversations/${conversation.id}/messages?includeDeleted=maybe`), context);
   assert.equal(invalidDeleted.status, 400);
   assert.equal((await invalidDeleted.json()).errors[0].pointer, "/includeDeleted");
+  const invalidAfter = await handleOrbitApi(new Request(`https://optichat.test/api/v1/conversations/${conversation.id}/messages?after=not-a-page-token`), context);
+  assert.equal(invalidAfter.status, 400);
+  assert.equal((await invalidAfter.json()).errors[0].pointer, "/after");
 });
 
 test("demo workspace creation provisions stable conversation and message resources", async () => {
@@ -519,6 +640,47 @@ test("demo workspace creation provisions stable conversation and message resourc
   );
   assert.equal(product.status, 200);
   assert.ok((await product.json()).data.some((message: { id: string }) => message.id === "prod-mention"));
+
+  const expectedConversations = SEED_CONVERSATIONS.filter((item) => item.workspaceId === "orbit");
+  const expectedMessages = SEED_MESSAGES.filter((message) => expectedConversations.some((item) => item.id === message.conversationId));
+  const actualMessages: Array<{
+    id: string;
+    conversationId: string;
+    body: string;
+    authorId: string;
+    parentId?: string;
+    createdAt: string;
+    reactions: Array<{ emoji: string; userIds: string[] }>;
+  }> = [];
+  for (const conversation of expectedConversations) {
+    const response = await handleOrbitApi(
+      new Request(`https://optichat.test/api/v1/conversations/${conversation.id}/messages?limit=100`),
+      context,
+    );
+    assert.equal(response.status, 200);
+    const page = (await response.json()).data as typeof actualMessages;
+    const orderedExpected = expectedMessages
+      .filter((message) => message.conversationId === conversation.id)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+    assert.deepEqual(page.map((message) => message.id), orderedExpected.map((message) => message.id));
+    actualMessages.push(...page);
+  }
+  assert.equal(actualMessages.length, expectedMessages.length);
+
+  for (const expected of expectedMessages) {
+    const actual = actualMessages.find((message: { id: string }) => message.id === expected.id);
+    assert.ok(actual, `Missing seeded message ${expected.id}`);
+    assert.equal(actual.body, expected.body);
+    assert.equal(actual.authorId, expected.authorId === YOU ? context.userId : expected.authorId);
+    assert.equal(actual.parentId ?? null, expected.parentId ?? null);
+    assert.equal(actual.createdAt, expected.createdAt);
+    const expectedReactions = expected.reactions.map((reaction) => ({
+      emoji: reaction.emoji,
+      userIds: reaction.userIds.map((userId) => userId === YOU ? context.userId : userId),
+    }));
+    assert.deepEqual(actual.reactions, expectedReactions);
+  }
+
   const ownMessage = await handleOrbitApi(
     new Request("https://optichat.test/api/v1/messages/gen-checklist"),
     context,

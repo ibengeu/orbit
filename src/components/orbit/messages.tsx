@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useLayoutEffect, useRef, useState, type ComponentPropsWithoutRef, type FocusEvent, type ReactNode } from "react";
+import { forwardRef, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentPropsWithoutRef, type FocusEvent, type ReactNode } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import * as Popover from "@radix-ui/react-popover";
 import { Bookmark, Copy, MessageSquare, MoreHorizontal, Pencil, Phone, Smile, Trash2 } from "lucide-react";
@@ -14,7 +14,7 @@ import {
   formatBytes,
   groupMessages,
   gutterTime,
-  replyCount,
+  replyCountsByParent,
   timeLabel,
   userById,
   type MessageGroup,
@@ -45,6 +45,7 @@ export function MessageList({
     mode === "thread"
       ? messages
       : messages.filter((message) => message.conversationId === conversationId && !message.parentId);
+  const replyCounts = useMemo(() => (mode === "thread" ? new Map<string, number>() : replyCountsByParent(messages)), [messages, mode]);
   const days = bucketByDay(roots);
   const coarse = useCoarsePointer();
 
@@ -125,7 +126,7 @@ export function MessageList({
                 <MessageGroupView
                   key={group.id}
                   group={group}
-                  allMessages={messages}
+                  replyCounts={replyCounts}
                   inThread={mode === "thread"}
                   coarse={coarse}
                 />
@@ -158,12 +159,12 @@ export function MessageList({
 
 function MessageGroupView({
   group,
-  allMessages,
+  replyCounts,
   inThread,
   coarse,
 }: {
   group: MessageGroup;
-  allMessages: Message[];
+  replyCounts: Map<string, number>;
   inThread: boolean;
   coarse: boolean;
 }) {
@@ -184,7 +185,7 @@ function MessageGroupView({
           authorName={author.name}
           yours={yours}
           presence={presence}
-          replies={inThread ? 0 : replyCount(allMessages, message.id)}
+          replies={inThread ? 0 : replyCounts.get(message.id) ?? 0}
           inThread={inThread}
           coarse={coarse}
         />
