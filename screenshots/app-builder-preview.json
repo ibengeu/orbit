@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "#general · Orbit",
+      "hasCanvas": false,
+      "bodyTextLen": 2169,
+      "bodyTextHash": "8a83fe2a8e3e6b4dcc2688408babdd69709b2c42ccfc266759013534dc8f2447",
+      "bodyTextPrefix": "Skip to conversation RH Online Orbit Search Ctrl K Home DMs Acti",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "#general · Orbit",
+      "hasCanvas": false,
+      "bodyTextLen": 1859,
+      "bodyTextHash": "b93ce6455ae27bd79acf35e47d70d3675352b05d720012f0837af2495e356d4e",
+      "bodyTextPrefix": "Skip to conversation Skip to composer general Company-wide notes",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-preview.json"
+}

@@ -1,0 +1,38 @@
+{
+  "url": "http://127.0.0.1:8081",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "#general · Orbit",
+      "hasCanvas": false,
+      "bodyTextLen": 1510,
+      "bodyTextHash": "efbc61f9cb22be5151f6144a92c6ea9277385f433a76ffddbec1fa2cb07b02f9",
+      "bodyTextPrefix": "Skip to conversation LU RH Online Orbit Search Ctrl K Home DMs A",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "#general · Orbit",
+      "hasCanvas": false,
+      "bodyTextLen": 1230,
+      "bodyTextHash": "b007030521950b324183f361887a98b9232f81dd9b5c5abd40bbd71e9084d66d",
+      "bodyTextPrefix": "Skip to conversation general Company-wide notes and launch timin",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-built.json",
+  "divergesFromBaseline": false,
+  "baselineReasons": []
+}
