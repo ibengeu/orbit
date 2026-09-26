@@ -9,7 +9,7 @@ export function Welcome({ onEnter }: { onEnter: () => void }) {
     onEnter();
   };
   return (
-    <main className="min-h-dvh bg-paper text-ink lg:grid lg:grid-cols-[minmax(0,1.2fr)_minmax(22rem,26rem)]">
+    <main className="min-h-dvh bg-paper text-ink lg:grid lg:grid-cols-[minmax(0,1.2fr)_minmax(27.4rem,32.6rem)]">
       <a
         href="#signin"
         className="sr-only focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-20 focus:rounded-md focus:bg-paper focus:px-3 focus:py-2 focus:shadow-pop"

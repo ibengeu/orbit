@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Mic, MicOff, Phone, PhoneOff, Video, VideoOff } from "lucide-react";
 import { Avatar } from "@/components/orbit/avatar";
+import { updateCall } from "@/lib/orbit/api-client";
 import { conversationTitle, conversationsOf, conversationById, memberIds, userById } from "@/lib/orbit/derive";
 import { localTracks } from "@/lib/orbit/media";
 import { YOU } from "@/lib/orbit/seed";
@@ -9,10 +10,13 @@ import type { DemoCall } from "@/lib/orbit/types";
 
 export function CallRuntime() {
   useEffect(() => {
-    recoverInterruptedCall();
+    void recoverInterruptedCall();
     const end = () => {
       const call = useOrbit.getState().call;
-      if (call?.phase === "active") useOrbit.getState().endCall();
+      if (call?.phase !== "active") return;
+      // OWASP A04:2025 Insecure Design. Keep the bounded termination PATCH alive during navigation.
+      // This prevents an active server call from being stranded by browser shutdown.
+      void updateCall(call.id, "ended", { keepalive: true }).catch(() => undefined);
     };
     window.addEventListener("pagehide", end);
     return () => window.removeEventListener("pagehide", end);
@@ -151,12 +155,12 @@ function Lobby({ call, others }: { call: DemoCall; others: string[] }) {
           {call.mic === "requesting" || call.camera === "requesting" ? "Requesting access…" : "Join demo call"}
         </button>
         {call.mic === "denied" || call.mic === "unavailable" ? (
-          <button type="button" className={buttonClass} onClick={() => void useOrbit.getState().joinDemoCall({ withoutMic: true })}>
+          <button type="button" className={buttonClass} onClick={() => void useOrbit.getState().joinDemoCall({ withoutMic: true, withoutCamera: call.camera === "denied" || call.camera === "unavailable" })}>
             Join without microphone
           </button>
         ) : null}
         {call.kind === "video" && (call.camera === "denied" || call.camera === "unavailable") ? (
-          <button type="button" className={buttonClass} onClick={() => void useOrbit.getState().joinDemoCall({ withoutCamera: true })}>
+          <button type="button" className={buttonClass} onClick={() => void useOrbit.getState().joinDemoCall({ withoutCamera: true, withoutMic: call.mic === "denied" || call.mic === "unavailable" })}>
             Join without camera
           </button>
         ) : null}

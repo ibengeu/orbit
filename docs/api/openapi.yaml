@@ -1,0 +1,484 @@
+openapi: 3.1.0
+info:
+  title: Orbit API
+  version: 1.0.0
+  description: |
+    Resource-oriented API for Orbit workspaces, conversations, messages, and
+    collaboration state. In authenticated mode, every operation requires a
+    verified Orbit session and uses its user ID. In auth-off demo mode, requests
+    share one public demo owner and require no session. Do not store private data
+    in that mode. Errors use RFC 9457 Problem Details. Unsupported methods
+    return 405, JSON requests over 1 MB or multipart uploads over 10 MB return
+    413, and unexpected failures return 500. Unsupported request media types
+    return 415. Attachment bytes remain private to the authenticated owner.
+    Authenticated collection and resource queries use the verified caller ID.
+    Message edits, deletes, and restores also require message authorship. An inaccessible
+    identifier returns 404. Cross-site requests return 403 before resource
+    access. Production requires platform authentication and a durable database.
+    These errors use the same application/problem+json schema.
+    The `errors` extension lists field failures. Each `pointer` is a JSON
+    Pointer into the request body, or the named query parameter for query
+    validation. Error `detail` text is safe to show to the caller. The
+    `instance` is the request path and contains no query values.
+x-problem-types:
+  https://optichat.dev/problems/validation-error: Invalid body or query field; inspect `errors`.
+  https://optichat.dev/problems/invalid-json: Malformed JSON request body.
+  https://optichat.dev/problems/request-too-large: Request exceeds its body size limit.
+  https://optichat.dev/problems/unsupported-media-type: Request has an unsupported media type.
+  https://optichat.dev/problems/unauthorized: No verified session is available.
+  https://optichat.dev/problems/forbidden: The caller cannot perform the operation.
+  https://optichat.dev/problems/not-found: No accessible resource has that identifier.
+  https://optichat.dev/problems/conflict: A resource name already exists.
+  https://optichat.dev/problems/call-state-conflict: The call changed or the requested transition is invalid.
+  https://optichat.dev/problems/precondition-failed: An `If-Match` value is stale.
+  https://optichat.dev/problems/method-not-allowed: The resource does not support the method.
+  https://optichat.dev/problems/internal-error: The server could not complete the request.
+servers:
+  - url: /
+security:
+  - {}
+  - cookieAuth: []
+  - bearerAuth: []
+x-auth-modes:
+  public-demo: Authentication is disabled. All requests use one shared public demo owner, including with a durable database.
+  authenticated: A verified same-site session or bearer token is required. Missing identity returns 401, and data is scoped to its owner.
+paths:
+  /api/v1/workspaces:
+    get:
+      operationId: listWorkspaces
+      summary: List the caller's workspaces
+      tags: [Workspaces]
+      responses:
+        '200': { description: Workspace collection, content: { application/json: { schema: { $ref: '#/components/schemas/WorkspaceCollection' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      operationId: createWorkspace
+      summary: Create a workspace with a general channel
+      tags: [Workspaces]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateWorkspace' } } } }
+      responses:
+        '201': { description: Created workspace, content: { application/json: { schema: { $ref: '#/components/schemas/Workspace' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413': { $ref: '#/components/responses/RequestTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/workspaces/{workspaceId}:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      operationId: getWorkspace
+      summary: Get one workspace
+      tags: [Workspaces]
+      responses:
+        '200': { description: Workspace, content: { application/json: { schema: { $ref: '#/components/schemas/Workspace' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/workspaces/{workspaceId}/conversations:
+    parameters: [{ $ref: '#/components/parameters/WorkspaceId' }]
+    get:
+      operationId: listConversations
+      summary: List workspace conversations
+      tags: [Conversations]
+      responses:
+        '200': { description: Conversation collection, content: { application/json: { schema: { $ref: '#/components/schemas/ConversationCollection' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: createConversation
+      summary: Create a channel or direct conversation
+      tags: [Conversations]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateConversation' } } } }
+      responses:
+        '201': { description: Created conversation, content: { application/json: { schema: { $ref: '#/components/schemas/Conversation' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413': { $ref: '#/components/responses/RequestTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/conversations/{conversationId}/messages:
+    parameters: [{ $ref: '#/components/parameters/ConversationId' }]
+    get:
+      operationId: listMessages
+      summary: List messages in a conversation
+      tags: [Messages]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: cursor, in: query, schema: { type: integer, minimum: 0, default: 0 }, description: Offset cursor returned by the previous response. }
+        - { name: includeDeleted, in: query, schema: { type: boolean, default: false }, description: Include soft-deleted message markers for state synchronization. }
+      responses:
+        '200': { description: Paginated messages, content: { application/json: { schema: { $ref: '#/components/schemas/MessageCollection' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: createMessage
+      summary: Send a message, thread reply, or file
+      tags: [Messages]
+      requestBody:
+        required: true
+        content:
+          application/json: { schema: { $ref: '#/components/schemas/CreateMessage' } }
+          multipart/form-data: { schema: { $ref: '#/components/schemas/CreateMessageWithFile' } }
+      responses:
+        '201': { description: Created message, headers: { ETag: { $ref: '#/components/headers/ETag' } }, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413': { $ref: '#/components/responses/RequestTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/conversations/{conversationId}/read-state:
+    parameters: [{ $ref: '#/components/parameters/ConversationId' }]
+    get:
+      operationId: getReadState
+      summary: Get the caller's read cursor for a conversation
+      tags: [Read State]
+      responses:
+        '200': { description: Read state or null cursor, content: { application/json: { schema: { $ref: '#/components/schemas/ReadStateResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: replaceReadState
+      summary: Replace the caller's read cursor
+      tags: [Read State]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ReadState' } } } }
+      responses:
+        '200': { description: Read state, content: { application/json: { schema: { $ref: '#/components/schemas/ReadStateResponse' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413': { $ref: '#/components/responses/RequestTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/conversations/{conversationId}/calls:
+    parameters: [{ $ref: '#/components/parameters/ConversationId' }]
+    post:
+      operationId: createCall
+      summary: Create a call lifecycle resource
+      description: The current UI uses simulated participants. This resource records lifecycle and history; it does not provide media signaling.
+      tags: [Calls]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateCall' } } } }
+      responses:
+        '201': { description: Call, content: { application/json: { schema: { $ref: '#/components/schemas/Call' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413': { $ref: '#/components/responses/RequestTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/messages/{messageId}:
+    parameters: [{ $ref: '#/components/parameters/MessageId' }]
+    get:
+      operationId: getMessage
+      summary: Get one message
+      tags: [Messages]
+      responses:
+        '200': { description: Message, headers: { ETag: { $ref: '#/components/headers/ETag' } }, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: updateMessage
+      summary: Edit or restore a message authored by the caller
+      tags: [Messages]
+      parameters: [{ $ref: '#/components/parameters/IfMatch' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/UpdateMessage' } } } }
+      responses:
+        '200': { description: Updated message, headers: { ETag: { $ref: '#/components/headers/ETag' } }, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '413': { $ref: '#/components/responses/RequestTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      operationId: deleteMessage
+      summary: Soft-delete a message authored by the caller
+      tags: [Messages]
+      parameters: [{ $ref: '#/components/parameters/IfMatch' }]
+      responses:
+        '204': { description: Message deleted }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '412': { $ref: '#/components/responses/PreconditionFailed' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/messages/{messageId}/attachments/{attachmentId}:
+    parameters:
+      - { $ref: '#/components/parameters/MessageId' }
+      - { $ref: '#/components/parameters/AttachmentId' }
+    get:
+      operationId: downloadAttachment
+      summary: Download an attachment from an owned message
+      description: The response uses the stored allowlisted media type, Content-Disposition attachment, X-Content-Type-Options nosniff, and private no-store caching.
+      tags: [Attachments]
+      responses:
+        '200':
+          description: Attachment bytes
+          headers:
+            Content-Disposition: { description: Download filename, schema: { type: string } }
+            X-Content-Type-Options: { description: Always nosniff, schema: { type: string, enum: [nosniff] } }
+          content:
+            image/png: { schema: { type: string, format: binary } }
+            image/jpeg: { schema: { type: string, format: binary } }
+            image/webp: { schema: { type: string, format: binary } }
+            image/gif: { schema: { type: string, format: binary } }
+            image/avif: { schema: { type: string, format: binary } }
+            application/pdf: { schema: { type: string, format: binary } }
+            text/plain: { schema: { type: string, format: binary } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/messages/{messageId}/reactions/{emoji}:
+    parameters:
+      - { $ref: '#/components/parameters/MessageId' }
+      - { $ref: '#/components/parameters/Emoji' }
+    put:
+      operationId: addReaction
+      summary: Add the caller's reaction
+      tags: [Reactions]
+      responses:
+        '200': { description: Message with updated reactions, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      operationId: removeReaction
+      summary: Remove the caller's reaction
+      tags: [Reactions]
+      responses:
+        '200': { description: Message with updated reactions, content: { application/json: { schema: { $ref: '#/components/schemas/Message' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/messages/{messageId}/saved:
+    parameters: [{ $ref: '#/components/parameters/MessageId' }]
+    put:
+      operationId: saveMessage
+      summary: Save a message for later
+      tags: [Saved Messages]
+      responses:
+        '200': { description: Save state, content: { application/json: { schema: { $ref: '#/components/schemas/SavedMessage' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    delete:
+      operationId: unsaveMessage
+      summary: Remove a saved message
+      tags: [Saved Messages]
+      responses:
+        '204': { description: Save removed }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/me/saved-messages:
+    get:
+      operationId: listSavedMessages
+      summary: List saved messages
+      tags: [Saved Messages]
+      responses:
+        '200': { description: Saved message collection, content: { application/json: { schema: { $ref: '#/components/schemas/SavedMessageCollection' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/me/calls:
+    get:
+      operationId: listCalls
+      summary: List the caller's ended calls
+      tags: [Calls]
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: cursor, in: query, schema: { type: integer, minimum: 0, default: 0 }, description: Offset cursor returned by the previous response. }
+      responses:
+        '200': { description: Paginated ended calls, content: { application/json: { schema: { $ref: '#/components/schemas/CallCollection' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/me/profile:
+    get:
+      operationId: getProfile
+      summary: Get the caller's profile state
+      tags: [Profile]
+      responses:
+        '200': { description: Profile, content: { application/json: { schema: { $ref: '#/components/schemas/Profile' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    patch:
+      operationId: updateProfile
+      summary: Update presence or status
+      tags: [Profile]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProfileUpdate' } } } }
+      responses:
+        '200': { description: Profile, content: { application/json: { schema: { $ref: '#/components/schemas/Profile' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413': { $ref: '#/components/responses/RequestTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/me/preferences:
+    get:
+      operationId: getPreferences
+      summary: Get the caller's preferences
+      tags: [Preferences]
+      responses:
+        '200': { description: Preferences, content: { application/json: { schema: { $ref: '#/components/schemas/Preferences' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    patch:
+      operationId: updatePreferences
+      summary: Update the caller's preferences
+      tags: [Preferences]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/Preferences' } } } }
+      responses:
+        '200': { description: Preferences, content: { application/json: { schema: { $ref: '#/components/schemas/Preferences' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413': { $ref: '#/components/responses/RequestTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '500': { $ref: '#/components/responses/InternalError' }
+  /api/v1/calls/{callId}:
+    parameters: [{ $ref: '#/components/parameters/CallId' }]
+    get:
+      operationId: getCall
+      summary: Get an owned call resource
+      tags: [Calls]
+      responses:
+        '200': { description: Call, content: { application/json: { schema: { $ref: '#/components/schemas/Call' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: updateCall
+      summary: Advance a call lifecycle state
+      tags: [Calls]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CallUpdate' } } } }
+      responses:
+        '200': { description: Call, content: { application/json: { schema: { $ref: '#/components/schemas/Call' } } } }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '413': { $ref: '#/components/responses/RequestTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '409': { $ref: '#/components/responses/Conflict' }
+components:
+  securitySchemes:
+    cookieAuth: { type: apiKey, in: cookie, name: __Host-grok-auth.session_token }
+    bearerAuth: { type: http, scheme: bearer }
+  parameters:
+    WorkspaceId: { name: workspaceId, in: path, required: true, schema: { type: string } }
+    ConversationId: { name: conversationId, in: path, required: true, schema: { type: string } }
+    MessageId: { name: messageId, in: path, required: true, schema: { type: string } }
+    AttachmentId: { name: attachmentId, in: path, required: true, schema: { type: string } }
+    Emoji: { name: emoji, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 16 }, description: URL-encoded emoji that identifies the caller's reaction. }
+    CallId: { name: callId, in: path, required: true, schema: { type: string } }
+    IfMatch: { name: If-Match, in: header, required: false, schema: { type: string }, description: Optional ETag guard. A stale value returns 412. }
+  headers:
+    ETag: { description: Opaque message version validator, schema: { type: string, example: '"1"' } }
+  responses:
+    Unauthorized: { description: Authentication required, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+    Forbidden: { description: Authorization failed, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+    RequestTooLarge: { description: Request exceeds its size limit, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+    UnsupportedMediaType: { description: Request has another media type, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+    InternalError: { description: Safe unexpected failure, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+    NotFound: { description: Resource not found, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+    Conflict: { description: Resource conflict, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+    PreconditionFailed: { description: ETag conflict, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+    ValidationError: { description: Validation failed, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+  schemas:
+    Workspace:
+      type: object
+      required: [id, name, initials, createdAt, updatedAt]
+      properties: { id: { type: string }, name: { type: string }, initials: { type: string }, createdAt: { type: string, format: date-time }, updatedAt: { type: string, format: date-time } }
+    WorkspaceCollection: { type: object, required: [data], properties: { data: { type: array, items: { $ref: '#/components/schemas/Workspace' } } } }
+    CreateWorkspace: { type: object, required: [name], properties: { name: { type: string, minLength: 1, maxLength: 80 }, templateId: { type: string, enum: [orbit, lumen], description: Provision the matching built-in demo content and stable IDs. } }, additionalProperties: false }
+    Conversation:
+      type: object
+      required: [id, workspaceId, kind, participantIds, createdAt]
+      properties: { id: { type: string }, workspaceId: { type: string }, kind: { type: string, enum: [channel, dm] }, name: { type: string }, description: { type: string }, participantIds: { type: array, items: { type: string } }, title: { type: string }, createdAt: { type: string, format: date-time } }
+    ConversationCollection: { type: object, required: [data], properties: { data: { type: array, items: { $ref: '#/components/schemas/Conversation' } } } }
+    CreateConversation: { type: object, required: [kind], properties: { kind: { type: string, enum: [channel, dm] }, name: { type: string, maxLength: 80 }, description: { type: string, maxLength: 240 }, participantIds: { type: array, items: { type: string } }, title: { type: string, maxLength: 120 } }, additionalProperties: false }
+    Message:
+      type: object
+      required: [id, conversationId, authorId, body, createdAt, reactions, version]
+      properties: { id: { type: string }, conversationId: { type: string }, authorId: { type: string }, body: { type: string }, parentId: { type: string }, createdAt: { type: string, format: date-time }, editedAt: { type: string, format: date-time }, deletedAt: { type: string, format: date-time }, reactions: { type: array, items: { $ref: '#/components/schemas/Reaction' } }, attachments: { type: array, items: { $ref: '#/components/schemas/Attachment' } }, version: { type: integer } }
+    Attachment: { type: object, required: [id, name, size], properties: { id: { type: string }, name: { type: string }, size: { type: integer, minimum: 1, maximum: 10485760 } } }
+    MessageCollection: { type: object, required: [data, hasMore], properties: { data: { type: array, items: { $ref: '#/components/schemas/Message' } }, nextCursor: { type: [string, 'null'] }, hasMore: { type: boolean } } }
+    CreateMessage: { type: object, required: [body], properties: { body: { type: string, minLength: 1, maxLength: 4000 }, parentId: { type: [string, 'null'] } }, additionalProperties: false }
+    CreateMessageWithFile:
+      type: object
+      required: [body, file]
+      properties:
+        body: { type: string, maxLength: 4000, description: May be empty when a file is present. }
+        parentId: { type: string, maxLength: 120 }
+        file: { type: string, format: binary, description: One nonempty image, PDF, or plain text file up to 10 MB. SVG and other active content types are rejected. }
+      additionalProperties: false
+    UpdateMessage:
+      oneOf:
+        - type: object
+          required: [body]
+          properties: { body: { type: string, minLength: 1, maxLength: 4000 } }
+          additionalProperties: false
+        - type: object
+          required: [deleted]
+          properties:
+            body: { type: string, minLength: 1, maxLength: 4000 }
+            deleted: { const: false }
+          additionalProperties: false
+    Reaction: { type: object, required: [emoji, userIds], properties: { emoji: { type: string }, userIds: { type: array, items: { type: string } } } }
+    SavedMessage: { type: object, required: [messageId, saved], properties: { messageId: { type: string }, saved: { type: boolean } } }
+    SavedMessageCollection: { type: object, required: [data], properties: { data: { type: array, items: { type: object, required: [messageId, savedAt], properties: { messageId: { type: string }, savedAt: { type: string, format: date-time } } } } } }
+    Profile: { type: object, required: [userId, presence, status], properties: { userId: { type: string, readOnly: true }, presence: { type: string, enum: [online, away, offline] }, status: { type: string, maxLength: 120 } } }
+    ProfileUpdate: { type: object, properties: { presence: { type: string, enum: [online, away, offline] }, status: { type: string, maxLength: 120 } }, additionalProperties: false }
+    Preferences: { type: object, required: [alwaysShowTime], properties: { alwaysShowTime: { type: boolean } }, additionalProperties: false }
+    ReadState: { type: object, required: [lastReadAt], properties: { lastReadAt: { type: string, format: date-time } }, additionalProperties: false }
+    ReadStateResponse: { type: object, required: [conversationId, lastReadAt], properties: { conversationId: { type: string }, lastReadAt: { type: [string, 'null'], format: date-time } } }
+    CreateCall: { type: object, required: [kind], properties: { kind: { type: string, enum: [voice, video] } }, additionalProperties: false }
+    CallUpdate: { type: object, required: [status], properties: { status: { type: string, enum: [lobby, active, ended] } }, additionalProperties: false }
+    Call: { type: object, required: [id, conversationId, kind, status], properties: { id: { type: string }, conversationId: { type: string }, kind: { type: string, enum: [voice, video] }, status: { type: string, enum: [lobby, active, ended] }, startedAt: { type: string, format: date-time }, endedAt: { type: string, format: date-time }, durationSec: { type: integer } } }
+    CallCollection: { type: object, required: [data, nextCursor, hasMore], properties: { data: { type: array, items: { $ref: '#/components/schemas/Call' } }, nextCursor: { type: [string, 'null'] }, hasMore: { type: boolean } } }
+    Problem:
+      type: object
+      required: [type, title, status, detail, instance]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string, format: uri-reference }
+        errors: { type: array, items: { type: object, required: [pointer, detail], properties: { pointer: { type: string }, detail: { type: string } } } }

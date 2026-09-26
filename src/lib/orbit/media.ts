@@ -4,13 +4,19 @@ const tracks: { audio: MediaStreamTrack | null; video: MediaStreamTrack | null }
 };
 
 const urls = new Map<string, string>();
+const files = new Map<string, File>();
 
 export function rememberFile(id: string, file: File) {
   const previous = urls.get(id);
   if (previous) URL.revokeObjectURL(previous);
   const url = URL.createObjectURL(file);
   urls.set(id, url);
+  files.set(id, file);
   return url;
+}
+
+export function localFile(id: string) {
+  return files.get(id) ?? null;
 }
 
 export function fileUrl(id: string) {
@@ -21,6 +27,7 @@ export function forgetFile(id: string) {
   const url = urls.get(id);
   if (url) URL.revokeObjectURL(url);
   urls.delete(id);
+  files.delete(id);
 }
 
 export function localTracks() {

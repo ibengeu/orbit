@@ -5,6 +5,7 @@ import { Bookmark, Copy, MessageSquare, MoreHorizontal, Pencil, Phone, Smile, Tr
 import { toast } from "sonner";
 import { Avatar } from "@/components/orbit/avatar";
 import { MessageBody } from "@/components/orbit/message-body";
+import { downloadAttachment } from "@/lib/orbit/api-client";
 import { fileUrl } from "@/lib/orbit/media";
 import { REACTIONS, YOU } from "@/lib/orbit/seed";
 import {
@@ -252,7 +253,7 @@ function MessageRow({
       onBlur={release}
       tabIndex={coarse ? undefined : 0}
       className={cn(
-        "group relative grid grid-cols-[2.5rem_minmax(0,1fr)] gap-x-2 rounded-md px-2 py-1 hover:bg-ink/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+        "group relative grid grid-cols-[2.5rem_minmax(0,1fr)] gap-x-2 rounded-md px-2 py-1 hover:z-30 hover:bg-ink/5 focus-within:z-30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
         highlightId === message.id && "bg-accent/10",
         menu && "bg-ink/5",
       )}
@@ -350,9 +351,18 @@ function MessageRow({
               <span className="truncate font-medium">{file.name}</span>
               <span className="text-xs text-ink-faint tabular-nums">{formatBytes(file.size)}</span>
               {href ? (
-                <a href={href} download={file.name} className="text-xs font-semibold text-accent underline">
-                  Open
-                </a>
+                <a href={href} download={file.name} className="text-xs font-semibold text-accent underline">Open</a>
+              ) : file.id.startsWith("att-") ? (
+                <button type="button" className="text-xs font-semibold text-accent underline" onClick={() => {
+                  void downloadAttachment(message.id, file.id).then((blob) => {
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.href = url;
+                    link.download = file.name;
+                    link.click();
+                    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                  }).catch(() => toast.error("Could not download the file."));
+                }}>Open</button>
               ) : (
                 <span className="text-xs text-ink-soft">This file is no longer available locally.</span>
               )}

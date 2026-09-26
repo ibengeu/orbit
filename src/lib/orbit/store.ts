@@ -1,12 +1,14 @@
 import { create } from "zustand";
+import { addReaction, createCall, createConversation as createServerConversation, createMessage, createWorkspace as createServerWorkspace, deleteMessage as deleteServerMessage, listConversations, OrbitApiError, removeReaction, saveMessage, setReadState, unsaveMessage, updateCall, updateMessage, updatePreferences, updateProfile } from "@/lib/orbit/api-client";
 import { workspaceNameError } from "@/lib/orbit/compose";
-import { activityItems, assembleMessages, conversationById, conversationsOf, initialsFor, memberIds, slugify, unreadMeta, workspacesOf } from "@/lib/orbit/derive";
-import { captureMedia, explainMediaError, localTracks, setTrackEnabled, stopCallTracks } from "@/lib/orbit/media";
+import { activityItems, assembleMessages, conversationById, conversationsOf, memberIds, slugify, workspacesOf } from "@/lib/orbit/derive";
+import { captureMedia, explainMediaError, forgetFile, localFile, localTracks, setTrackEnabled, stopCallTracks } from "@/lib/orbit/media";
 import { INITIAL_LAST_READ, STORAGE_KEY, YOU } from "@/lib/orbit/seed";
 import type { Attachment, CallHistoryItem, CallKind, Conversation, DemoCall, Message, PersistedOrbit, Presence, View, Workspace } from "@/lib/orbit/types";
 
 type OrbitStore = PersistedOrbit & {
   hydrated: boolean;
+  cacheOwnerId: string | null;
   highlightId: string | null;
   searchOpen: boolean;
   searchScopeId: string | null;
@@ -20,6 +22,7 @@ type OrbitStore = PersistedOrbit & {
   statusDialog: boolean;
   prefsDialog: boolean;
   hydrate: () => void;
+  clearAccountState: () => void;
   setWorkspace: (id: string) => void;
   openConversation: (id: string, options?: { keepThread?: boolean }) => void;
   setView: (view: View) => void;
@@ -42,7 +45,7 @@ type OrbitStore = PersistedOrbit & {
   closeThread: () => void;
   highlight: (messageId: string) => void;
   focusMessage: (messageId: string) => void;
-  openDirectMessage: (userId: string) => void;
+  openDirectMessage: (userId: string) => Promise<void>;
   setMenu: (menu: "workspace" | "profile" | null) => void;
   openSearch: (scopeId?: string | null) => void;
   setSearchOpen: (open: boolean) => void;
@@ -54,26 +57,26 @@ type OrbitStore = PersistedOrbit & {
   setPresence: (presence: Presence) => void;
   setStatus: (status: string) => void;
   setAlwaysShowTime: (value: boolean) => void;
-  createWorkspace: (name: string) => string | null;
-  createChannel: (name: string, description: string) => string | null;
+  createWorkspace: (name: string) => Promise<string | null>;
+  createChannel: (name: string, description: string) => Promise<string | null>;
   goHome: () => void;
   goDms: () => void;
-  resetDemo: () => void;
+  resetLocalView: () => void;
   liveMessage: string;
   announce: (message: string) => void;
   call: DemoCall | null;
   callSwitch: { conversationId: string; kind: CallKind } | null;
-  requestCall: (conversationId: string, kind: CallKind) => void;
-  cancelLobby: () => void;
+  requestCall: (conversationId: string, kind: CallKind) => Promise<void>;
+  cancelLobby: () => Promise<void>;
   joinDemoCall: (options?: { withoutMic?: boolean; withoutCamera?: boolean }) => Promise<void>;
   enablePreview: () => Promise<void>;
   retryDevice: (device: "mic" | "camera") => Promise<void>;
   toggleMute: () => Promise<void>;
   toggleCamera: () => Promise<void>;
-  endCall: () => void;
+  endCall: () => Promise<void>;
   minimizeCall: () => void;
   returnToCall: () => void;
-  confirmCallSwitch: () => void;
+  confirmCallSwitch: () => Promise<void>;
   dismissCallSwitch: () => void;
   openActivity: (messageId: string) => void;
   markActivityRead: () => void;
@@ -105,7 +108,9 @@ const EMPTY_PERSISTED = (): PersistedOrbit => ({
   extraConversations: [],
 });
 
-function snapshot(state: OrbitStore): PersistedOrbit {
+type LocalOrbitCache = Pick<PersistedOrbit, "workspaceId" | "conversationId" | "threadParentId" | "view" | "drafts" | "draftAttachments" | "activityReadIds" | "collapsed" | "lastChannel" | "lastDm">;
+
+function snapshot(state: OrbitStore): LocalOrbitCache {
   return {
     workspaceId: state.workspaceId,
     conversationId: state.conversationId,
@@ -113,37 +118,39 @@ function snapshot(state: OrbitStore): PersistedOrbit {
     view: state.view,
     drafts: state.drafts,
     draftAttachments: state.draftAttachments,
-    savedIds: state.savedIds,
-    savedAt: state.savedAt,
     activityReadIds: state.activityReadIds,
-    callHistory: state.callHistory,
     collapsed: state.collapsed,
-    lastRead: state.lastRead,
     lastChannel: state.lastChannel,
     lastDm: state.lastDm,
-    createdMessages: state.createdMessages,
-    edited: state.edited,
-    deletedIds: state.deletedIds,
-    reactionOverrides: state.reactionOverrides,
-    presence: state.presence,
-    status: state.status,
-    alwaysShowTime: state.alwaysShowTime,
-    extraWorkspaces: state.extraWorkspaces,
-    extraConversations: state.extraConversations,
   };
 }
 
 function persist(get: () => OrbitStore) {
-  if (!get().hydrated || typeof localStorage === "undefined") return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot(get())));
+  const state = get();
+  if (!state.hydrated || !state.cacheOwnerId || typeof localStorage === "undefined") return;
+  localStorage.setItem(`${STORAGE_KEY}:${state.cacheOwnerId}`, JSON.stringify(snapshot(state)));
 }
 
-function readPersisted(): Partial<PersistedOrbit> | null {
+const messageWriteQueues = new Map<string, Promise<void>>();
+
+function queueMessageWrite(messageId: string, write: () => Promise<void>) {
+  // OWASP A04:2025 Insecure Design. Serialize mutations to one message.
+  // This prevents a fast restore from reaching the server before its delete.
+  const pending = messageWriteQueues.get(messageId) ?? Promise.resolve();
+  const next = pending.catch(() => undefined).then(write);
+  messageWriteQueues.set(messageId, next);
+  void next.finally(() => {
+    if (messageWriteQueues.get(messageId) === next) messageWriteQueues.delete(messageId);
+  }).catch(() => undefined);
+  return next;
+}
+
+export function readUserCache(userId: string): Partial<LocalOrbitCache> | null {
   if (typeof localStorage === "undefined") return null;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(`${STORAGE_KEY}:${userId}`);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<PersistedOrbit>;
+    const parsed = JSON.parse(raw) as Partial<LocalOrbitCache>;
     if (!parsed || typeof parsed !== "object") return null;
     return parsed;
   } catch {
@@ -154,6 +161,7 @@ function readPersisted(): Partial<PersistedOrbit> | null {
 export const useOrbit = create<OrbitStore>((set, get) => ({
   ...EMPTY_PERSISTED(),
   hydrated: false,
+  cacheOwnerId: null,
   highlightId: null,
   searchOpen: false,
   searchScopeId: null,
@@ -172,57 +180,17 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
 
   announce: (message) => set({ liveMessage: message }),
 
+  clearAccountState: () => {
+    stopCallTracks();
+    set({ ...EMPTY_PERSISTED(), hydrated: false, cacheOwnerId: null, call: null, callSwitch: null, liveMessage: "" });
+  },
+
   hydrate: () => {
     if (get().hydrated) return;
-    const base = EMPTY_PERSISTED();
-    const saved = readPersisted();
-    const next: PersistedOrbit = saved
-      ? {
-          ...base,
-          ...saved,
-          drafts: saved.drafts ?? base.drafts,
-          draftAttachments: saved.draftAttachments ?? base.draftAttachments,
-          savedIds: saved.savedIds ?? base.savedIds,
-          savedAt: saved.savedAt ?? base.savedAt,
-          activityReadIds: saved.activityReadIds ?? base.activityReadIds,
-          callHistory: saved.callHistory ?? base.callHistory,
-          collapsed: { channels: false, dms: false },
-          lastRead: { ...base.lastRead, ...saved.lastRead },
-          lastChannel: { ...base.lastChannel, ...saved.lastChannel },
-          lastDm: { ...base.lastDm, ...saved.lastDm },
-          createdMessages: saved.createdMessages ?? [],
-          edited: saved.edited ?? {},
-          deletedIds: saved.deletedIds ?? [],
-          reactionOverrides: saved.reactionOverrides ?? {},
-          extraWorkspaces: saved.extraWorkspaces ?? [],
-          extraConversations: saved.extraConversations ?? [],
-          presence: saved.presence ?? base.presence,
-          status: saved.status ?? base.status,
-          alwaysShowTime: saved.alwaysShowTime ?? false,
-          view: saved.view ?? "conversation",
-          threadParentId: saved.threadParentId ?? null,
-          workspaceId: saved.workspaceId ?? base.workspaceId,
-          conversationId: saved.conversationId ?? base.conversationId,
-        }
-      : base;
-    const workspaces = workspacesOf(next.extraWorkspaces);
-    const conversations = conversationsOf(next.extraConversations);
-    if (!workspaces.some((workspace) => workspace.id === next.workspaceId)) {
-      next.workspaceId = "orbit";
-      next.conversationId = next.lastChannel.orbit || "general";
-      next.threadParentId = null;
-    } else if (next.conversationId) {
-      const selected = conversationById(conversations, next.conversationId);
-      if (!selected || selected.workspaceId !== next.workspaceId) {
-        const inWorkspace = conversations.filter((item) => item.workspaceId === next.workspaceId);
-        const fallback =
-          inWorkspace.find((item) => item.kind === "channel" && item.id === next.lastChannel[next.workspaceId]) ??
-          inWorkspace.find((item) => item.kind === "channel") ??
-          inWorkspace[0];
-        next.conversationId = fallback?.id ?? "";
-        next.threadParentId = null;
-      }
-    }
+    // OWASP A01:2025 Broken Access Control. Ignore legacy unscoped storage before identity verification.
+    // This prevents another account's cached transcript or draft from entering the current view.
+    if (typeof localStorage !== "undefined") localStorage.removeItem(STORAGE_KEY);
+    const next = EMPTY_PERSISTED();
     set({ ...next, hydrated: true });
     if (typeof location !== "undefined" && location.hash.length > 1) {
       const [conversationId, messageId] = location.hash.slice(1).split("/");
@@ -257,6 +225,7 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
     const conversation = conversationById(conversationsOf(state.extraConversations), id);
     if (!conversation) return;
     const same = state.conversationId === id;
+    const readAt = new Date().toISOString();
     const recentIds = [id, ...state.recentIds.filter((item) => item !== id)].slice(0, 8);
     set({
       workspaceId: conversation.workspaceId,
@@ -268,7 +237,7 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
       searchScopeId: null,
       recentIds,
       threadParentId: same || options?.keepThread ? state.threadParentId : null,
-      lastRead: { ...state.lastRead, [id]: new Date().toISOString() },
+      lastRead: { ...state.lastRead, [id]: readAt },
       lastChannel:
         conversation.kind === "channel"
           ? { ...state.lastChannel, [conversation.workspaceId]: id }
@@ -277,6 +246,7 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
         conversation.kind === "dm" ? { ...state.lastDm, [conversation.workspaceId]: id } : state.lastDm,
     });
     persist(get);
+    void setReadState(id, readAt).catch(() => set({ liveMessage: "Could not save the read position." }));
     const call = get().call;
     if (call?.phase === "active" && call.conversationId !== id) {
       set({ call: { ...call, surface: "minimized" } });
@@ -311,6 +281,11 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
     const trimmed = body.trim();
     const files = attachments?.filter((file) => file.name) ?? [];
     if (!trimmed && files.length === 0) return;
+    const file = files[0] ? localFile(files[0].id) : undefined;
+    if (files.length && !file) {
+      set({ liveMessage: "This file is no longer available. Attach it again." });
+      return;
+    }
     const message: Message = {
       id: `m-${crypto.randomUUID()}`,
       conversationId,
@@ -319,7 +294,7 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
       createdAt: new Date().toISOString(),
       parentId,
       reactions: [],
-      attachments: files.length ? files : undefined,
+      attachments: files,
     };
     const drafts = { ...get().drafts };
     delete drafts[draftKey];
@@ -333,6 +308,30 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
       liveMessage: parentId ? "Reply sent" : "Message sent",
     });
     persist(get);
+    {
+      void createMessage({ conversationId, body: trimmed, parentId, file: file ?? undefined })
+        .then((serverMessage) => {
+          if (files[0]) forgetFile(files[0].id);
+          set({
+            createdMessages: get().createdMessages.map((item) =>
+              item.id === message.id
+                ? { ...item, ...serverMessage, authorId: YOU, id: serverMessage.id }
+                : item,
+            ),
+          });
+          persist(get);
+        })
+        .catch(() => {
+          const current = get();
+          set({
+            createdMessages: current.createdMessages.filter((item) => item.id !== message.id),
+            drafts: { ...current.drafts, [draftKey]: current.drafts[draftKey] || body },
+            draftAttachments: files.length ? { ...current.draftAttachments, [draftKey]: files } : current.draftAttachments,
+            liveMessage: "Could not send the message. Try again.",
+          });
+          persist(get);
+        });
+    }
   },
 
   toggleReaction: (messageId, emoji) => {
@@ -341,6 +340,7 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
     if (!message) return;
     const reactions = message.reactions.map((reaction) => ({ ...reaction, userIds: [...reaction.userIds] }));
     const existing = reactions.find((reaction) => reaction.emoji === emoji);
+    const hadReaction = Boolean(existing?.userIds.includes(YOU));
     if (existing) {
       existing.userIds = existing.userIds.includes(YOU)
         ? existing.userIds.filter((id) => id !== YOU)
@@ -355,6 +355,10 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
       },
     });
     persist(get);
+    void (hadReaction ? removeReaction(messageId, emoji) : addReaction(messageId, emoji)).catch(() => {
+      set({ reactionOverrides: { ...get().reactionOverrides, [messageId]: message.reactions }, liveMessage: "Could not update the reaction." });
+      persist(get);
+    });
   },
 
   toggleSaved: (messageId) => {
@@ -370,11 +374,16 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
       liveMessage: saved ? "Removed from Later" : "Saved for later",
     });
     persist(get);
+    void (saved ? unsaveMessage(messageId) : saveMessage(messageId)).catch(() => {
+      set({ savedIds: state.savedIds, savedAt: state.savedAt, liveMessage: "Could not update Later." });
+      persist(get);
+    });
   },
 
   editMessage: (messageId, body) => {
     const trimmed = body.trim();
     if (!trimmed) return;
+    const previous = get().edited[messageId];
     set({
       edited: {
         ...get().edited,
@@ -382,10 +391,18 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
       },
     });
     persist(get);
+    void updateMessage(messageId, trimmed).catch(() => {
+      const edited = { ...get().edited };
+      if (previous) edited[messageId] = previous;
+      else delete edited[messageId];
+      set({ edited, liveMessage: "Could not edit the message." });
+      persist(get);
+    });
   },
 
   deleteMessage: (messageId) => {
     if (get().deletedIds.includes(messageId)) return;
+    const previous = get();
     const savedAt = { ...get().savedAt };
     delete savedAt[messageId];
     set({
@@ -395,11 +412,25 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
       liveMessage: "Message deleted",
     });
     persist(get);
+    const ownerId = get().cacheOwnerId;
+    void queueMessageWrite(messageId, () => deleteServerMessage(messageId)).catch(() => {
+      if (get().cacheOwnerId !== ownerId) return;
+      set({ deletedIds: previous.deletedIds, savedIds: previous.savedIds, savedAt: previous.savedAt, liveMessage: "Could not delete the message." });
+      persist(get);
+    });
   },
 
   undoDelete: (messageId) => {
+    const message = get().createdMessages.find((item) => item.id === messageId);
+    const previous = get().deletedIds;
+    const ownerId = get().cacheOwnerId;
     set({ deletedIds: get().deletedIds.filter((id) => id !== messageId) });
     persist(get);
+    if (message) void queueMessageWrite(messageId, () => updateMessage(messageId, message.body, undefined, true).then(() => undefined)).catch(() => {
+      if (get().cacheOwnerId !== ownerId) return;
+      set({ deletedIds: previous, liveMessage: "Could not restore the message." });
+      persist(get);
+    });
   },
 
   openThread: (parentId) => {
@@ -474,7 +505,7 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
     persist(get);
   },
 
-  openDirectMessage: (userId) => {
+  openDirectMessage: async (userId) => {
     if (userId === YOU) return;
     const state = get();
     const conversations = conversationsOf(state.extraConversations);
@@ -491,13 +522,20 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
       return;
     }
 
-    const conversation: Conversation = {
-      kind: "dm",
-      id: `dm-${state.workspaceId}-${userId}-${crypto.randomUUID()}`,
-      workspaceId: state.workspaceId,
-      participantIds: [YOU, userId],
-    };
-    set({ extraConversations: [...state.extraConversations, conversation] });
+    let createdId: string;
+    try {
+      const created = await createServerConversation({
+        workspaceId: state.workspaceId,
+        kind: "dm",
+        participantIds: [userId],
+      });
+      createdId = created.id;
+    } catch (cause) {
+      set({ liveMessage: cause instanceof OrbitApiError ? cause.problem.detail : "Could not open the direct message. Try again." });
+      return;
+    }
+    const conversation: Conversation = { kind: "dm", id: createdId, workspaceId: state.workspaceId, participantIds: [YOU, userId] };
+    set({ extraConversations: [...get().extraConversations, conversation] });
     persist(get);
     get().openConversation(conversation.id);
   },
@@ -532,21 +570,28 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
   setPrefsDialog: (prefsDialog) => set({ prefsDialog }),
 
   setPresence: (presence) => {
+    const previous = get().presence;
     set({ presence });
     persist(get);
+    void updateProfile({ presence }).catch(() => { set({ presence: previous, liveMessage: "Could not save presence." }); persist(get); });
   },
 
   setStatus: (status) => {
-    set({ status: status.trim() });
+    const next = status.trim();
+    const previous = get().status;
+    set({ status: next });
     persist(get);
+    void updateProfile({ status: next }).catch(() => { set({ status: previous, liveMessage: "Could not save status." }); persist(get); });
   },
 
   setAlwaysShowTime: (alwaysShowTime) => {
+    const previous = get().alwaysShowTime;
     set({ alwaysShowTime });
     persist(get);
+    void updatePreferences({ alwaysShowTime }).catch(() => { set({ alwaysShowTime: previous, liveMessage: "Could not save preferences." }); persist(get); });
   },
 
-  createWorkspace: (name) => {
+  createWorkspace: async (name) => {
     const state = get();
     const error = workspaceNameError(
       name,
@@ -554,27 +599,36 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
     );
     if (error) return error;
     const trimmed = name.trim();
-    const id = `ws-${slugify(trimmed) || "team"}-${Math.random().toString(36).slice(2, 6)}`;
-    const workspace: Workspace = { id, name: trimmed, initials: initialsFor(trimmed) };
-    const channelId = `${id}-general`;
+    let workspace: Workspace;
+    let channelId: string;
+    try {
+      const created = await createServerWorkspace(trimmed);
+      const conversations = await listConversations(created.id);
+      const general = conversations.data.find((item) => item.kind === "channel" && item.name === "general");
+      if (!general) return "The workspace has no general channel.";
+      workspace = { id: created.id, name: created.name, initials: created.initials };
+      channelId = general.id;
+    } catch (cause) {
+      return cause instanceof OrbitApiError ? cause.problem.detail : "Could not create the workspace. Try again.";
+    }
     const channel: Conversation = {
       kind: "channel",
       id: channelId,
-      workspaceId: id,
+      workspaceId: workspace.id,
       name: "general",
       description: `Home for ${trimmed}.`,
       memberIds: [YOU],
     };
     set({
-      extraWorkspaces: [...state.extraWorkspaces, workspace],
-      extraConversations: [...state.extraConversations, channel],
+      extraWorkspaces: [...get().extraWorkspaces, workspace],
+      extraConversations: [...get().extraConversations, channel],
       workspaceDialog: false,
     });
-    get().setWorkspace(id);
+    get().setWorkspace(workspace.id);
     return null;
   },
 
-  createChannel: (name, description) => {
+  createChannel: async (name, description) => {
     const slug = slugify(name);
     if (!slug) return "Use letters or numbers in the channel name.";
     const state = get();
@@ -582,16 +636,28 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
       (item) => item.workspaceId === state.workspaceId && item.kind === "channel" && item.name === slug,
     );
     if (existing) return "That channel already exists here.";
+    let createdId: string;
+    try {
+      const created = await createServerConversation({
+        workspaceId: state.workspaceId,
+        kind: "channel",
+        name: slug,
+        description: description.trim() || "New channel",
+      });
+      createdId = created.id;
+    } catch (cause) {
+      return cause instanceof OrbitApiError ? cause.problem.detail : "Could not create the channel. Try again.";
+    }
     const channel: Conversation = {
       kind: "channel",
-      id: `${state.workspaceId}-${slug}-${Math.random().toString(36).slice(2, 6)}`,
+      id: createdId,
       workspaceId: state.workspaceId,
       name: slug,
       description: description.trim() || "New channel",
       memberIds: [YOU],
     };
     set({
-      extraConversations: [...state.extraConversations, channel],
+      extraConversations: [...get().extraConversations, channel],
       channelDialog: false,
     });
     get().openConversation(channel.id);
@@ -599,7 +665,10 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
   },
 
   goHome: () => {
-    get().openConversation("general");
+    const state = get();
+    const conversations = conversationsOf(state.extraConversations);
+    const home = conversations.find((item) => item.workspaceId === state.workspaceId && item.kind === "channel" && item.name === "general");
+    if (home) get().openConversation(home.id);
   },
 
   goDms: () => {
@@ -616,11 +685,17 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
     }
   },
 
-  resetDemo: () => {
-    if (typeof localStorage !== "undefined") localStorage.removeItem(STORAGE_KEY);
+  resetLocalView: () => {
     set({
-      ...EMPTY_PERSISTED(),
-      hydrated: true,
+      workspaceId: "orbit",
+      conversationId: "general",
+      threadParentId: null,
+      view: "conversation",
+      drafts: {},
+      draftAttachments: {},
+      collapsed: { channels: false, dms: false },
+      lastChannel: { orbit: "general", lumen: "lumen-general" },
+      lastDm: { orbit: "dm-priya" },
       highlightId: null,
       searchOpen: false,
       searchScopeId: null,
@@ -633,12 +708,12 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
       workspaceDialog: false,
       statusDialog: false,
       prefsDialog: false,
-      call: null,
       callSwitch: null,
     });
+    persist(get);
   },
 
-requestCall: (conversationId, kind) => {
+requestCall: async (conversationId, kind) => {
     const state = get();
     const conversation = conversationById(conversationsOf(state.extraConversations), conversationId);
     if (!conversation || conversation.kind !== "dm") return;
@@ -655,10 +730,17 @@ requestCall: (conversationId, kind) => {
       return;
     }
     stopCallTracks();
+    let serverCall;
+    try {
+      serverCall = await createCall(conversationId, kind);
+    } catch {
+      set({ liveMessage: "Could not start the call. Try again." });
+      return;
+    }
     set({
       callSwitch: null,
       call: {
-        id: `call-${crypto.randomUUID()}`,
+        id: serverCall.id,
         conversationId,
         kind,
         phase: "lobby",
@@ -672,9 +754,15 @@ requestCall: (conversationId, kind) => {
     });
   },
 
-  cancelLobby: () => {
+  cancelLobby: async () => {
     const call = get().call;
     if (!call || call.phase !== "lobby") return;
+    try {
+      await updateCall(call.id, "ended");
+    } catch {
+      set({ liveMessage: "Could not cancel the call. Try again." });
+      return;
+    }
     stopCallTracks();
     set({ call: null });
   },
@@ -721,6 +809,7 @@ requestCall: (conversationId, kind) => {
       }
       const current = get().call;
       if (!current || current.id !== call.id) return;
+      await updateCall(call.id, "active");
       const startedAt = Date.now();
       set({
         call: {
@@ -821,11 +910,17 @@ requestCall: (conversationId, kind) => {
     await get().retryDevice("camera");
   },
 
-  endCall: () => {
+  endCall: async () => {
     const call = get().call;
+    if (!call) return;
+    try {
+      await updateCall(call.id, "ended");
+    } catch {
+      set({ liveMessage: "Could not end the call. Try again." });
+      return;
+    }
     stopCallTracks();
     sessionStorage.removeItem("orbit:live-call");
-    if (!call) return;
     if (call.phase === "active" && call.startedAt != null) recordCall(set, get, call);
     set({ call: null, callSwitch: null });
   },
@@ -846,11 +941,12 @@ requestCall: (conversationId, kind) => {
     get().openConversation(call.conversationId);
   },
 
-  confirmCallSwitch: () => {
+  confirmCallSwitch: async () => {
     const next = get().callSwitch;
     if (!next) return;
-    get().endCall();
-    get().requestCall(next.conversationId, next.kind);
+    await get().endCall();
+    if (get().call) return;
+    await get().requestCall(next.conversationId, next.kind);
   },
 
   dismissCallSwitch: () => set({ callSwitch: null }),
@@ -858,14 +954,20 @@ requestCall: (conversationId, kind) => {
 
 const LIVE_CALL_KEY = "orbit:live-call";
 
-export function recoverInterruptedCall() {
+export async function recoverInterruptedCall() {
   if (typeof sessionStorage === "undefined") return;
   const raw = sessionStorage.getItem(LIVE_CALL_KEY);
-  sessionStorage.removeItem(LIVE_CALL_KEY);
   if (!raw) return;
   try {
     const saved = JSON.parse(raw) as { id: string; conversationId: string; kind: CallKind; startedAt: number };
-    if (!saved.id || !saved.conversationId || !saved.startedAt) return;
+    if (!saved.id || !saved.conversationId || !saved.startedAt) {
+      sessionStorage.removeItem(LIVE_CALL_KEY);
+      return;
+    }
+    // OWASP A04:2025 Insecure Design. Retry a cancelled pagehide write before clearing recovery state.
+    // This prevents a locally ended call from remaining active in server history.
+    await updateCall(saved.id, "ended");
+    sessionStorage.removeItem(LIVE_CALL_KEY);
     const state = useOrbit.getState();
     if (state.createdMessages.some((message) => message.id === `history-${saved.id}`)) return;
     const endedAt = Date.now();
@@ -886,8 +988,8 @@ export function recoverInterruptedCall() {
       },
       endedAt,
     );
-  } catch {
-    /* ignore malformed recovery records */
+  } catch (error) {
+    if (error instanceof OrbitApiError && error.problem.status === 404) sessionStorage.removeItem(LIVE_CALL_KEY);
   }
 }
 

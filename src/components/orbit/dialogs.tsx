@@ -35,9 +35,9 @@ function ChannelDialog() {
     >
       <form
         className="mt-4 flex flex-col gap-3"
-        onSubmit={(event) => {
+        onSubmit={async (event) => {
           event.preventDefault();
-          const result = useOrbit.getState().createChannel(name, description);
+          const result = await useOrbit.getState().createChannel(name, description);
           setError(result);
           if (!result) {
             setName("");
@@ -74,13 +74,13 @@ function WorkspaceDialog() {
         }
       }}
       title="Create a workspace"
-      description="It starts with a #general channel and stays on this device."
+      description="It starts with a #general channel and is saved with your workspace."
     >
       <form
         className="mt-4 flex flex-col gap-3"
-        onSubmit={(event) => {
+        onSubmit={async (event) => {
           event.preventDefault();
-          const result = useOrbit.getState().createWorkspace(name);
+          const result = await useOrbit.getState().createWorkspace(name);
           setError(result);
           if (!result) setName("");
         }}
@@ -134,7 +134,7 @@ function PrefsDialog() {
       open={open}
       onOpenChange={useOrbit.getState().setPrefsDialog}
       title="Preferences"
-      description="Saved with your messages on this device."
+      description="Choose how message times appear."
     >
       <label className="mt-4 flex items-center justify-between gap-4 text-sm">
         <span>Always show message times</span>

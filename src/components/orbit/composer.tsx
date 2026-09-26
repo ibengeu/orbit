@@ -10,7 +10,7 @@ import type { Attachment } from "@/lib/orbit/types";
 import { cn } from "@/lib/utils";
 
 const MAX_HEIGHT = 192;
-const MAX_BODY = 10000;
+const MAX_BODY = 4000;
 const NO_FILES: Attachment[] = [];
 
 export function Composer({
@@ -106,7 +106,7 @@ export function Composer({
   return (
     <div className="rounded-lg border border-line bg-paper-raised focus-within:border-accent">
       {fileError ? <p className="px-3 pt-2 text-xs text-danger">{fileError}</p> : null}
-      {draft.length >= 9000 ? (
+      {draft.length >= 3500 ? (
         <p className="px-3 pt-2 text-xs text-ink-soft">{draft.length} / {MAX_BODY}</p>
       ) : null}
       {attachments.length > 0 ? (
@@ -199,7 +199,7 @@ export function Composer({
         <input
           ref={fileRef}
           type="file"
-          accept="image/*,application/pdf,text/plain"
+          accept="image/png,image/jpeg,image/webp,image/gif,image/avif,application/pdf,text/plain"
           tabIndex={-1}
           aria-hidden="true"
           className="sr-only"
@@ -207,8 +207,8 @@ export function Composer({
             const file = event.target.files?.[0];
             event.target.value = "";
             if (!file) return;
-            const allowed = file.type.startsWith("image/") || file.type === "application/pdf" || file.type === "text/plain";
-            if (!allowed || file.size > 10 * 1024 * 1024) {
+            const allowed = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/avif", "application/pdf", "text/plain"].includes(file.type);
+            if (!allowed || !file.size || file.size > 10 * 1024 * 1024) {
               const message = !allowed
                 ? "Choose an image, PDF, or plain text file."
                 : "That file is larger than 10 MB.";

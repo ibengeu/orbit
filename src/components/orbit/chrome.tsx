@@ -78,9 +78,14 @@ export function WorkspaceRail() {
             </RailNotice>
           ),
         )}
-        <RailNotice label="Add a workspace" message="Only Orbit is available in this demo">
+        <button
+          type="button"
+          aria-label="Add a workspace"
+          onClick={() => useOrbit.getState().setWorkspaceDialog(true)}
+          className="inline-flex size-11 items-center justify-center rounded-lg border border-plum-line bg-plum-raised text-plum-muted hover:bg-plum-hover hover:text-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper"
+        >
           <Plus className="size-5" />
-        </RailNotice>
+        </button>
       </div>
       <ProfileMenu>
         <button
@@ -144,12 +149,15 @@ function RailNotice({ label, message, children }: { label: string; message: stri
 
 export function Sidebar({ messages, onNavigate }: { messages: Message[]; onNavigate?: () => void }) {
   const conversationId = useOrbit((state) => state.conversationId);
+  const workspaceId = useOrbit((state) => state.workspaceId);
+  const extraWorkspaces = useOrbit((state) => state.extraWorkspaces);
   const view = useOrbit((state) => state.view);
   const collapsed = useOrbit((state) => state.collapsed);
   const extraConversations = useOrbit((state) => state.extraConversations);
   const lastRead = useOrbit((state) => state.lastRead);
   const activityReadIds = useOrbit((state) => state.activityReadIds);
-  const conversations = conversationsOf(extraConversations).filter((item) => item.workspaceId === "orbit");
+  const conversations = conversationsOf(extraConversations).filter((item) => item.workspaceId === workspaceId);
+  const workspaceName = workspacesOf(extraWorkspaces).find((item) => item.id === workspaceId)?.name ?? "Orbit";
   const channels = conversations.filter((item) => item.kind === "channel");
   const dms = conversations.filter((item) => item.kind === "dm");
   const current = conversations.find((item) => item.id === conversationId);
@@ -162,7 +170,7 @@ export function Sidebar({ messages, onNavigate }: { messages: Message[]; onNavig
   return (
     <nav aria-label="Sidebar" className="flex h-full min-h-0 w-full flex-col bg-plum-raised text-paper">
       <div className="flex items-center gap-2 px-3 py-3">
-        <WorkspaceMenu name="Orbit" />
+        <WorkspaceMenu name={workspaceName} />
         <span className="rounded-full bg-plum px-2 py-0.5 text-[0.65rem] font-semibold tracking-wide text-plum-muted uppercase">
           Demo workspace
         </span>
@@ -471,7 +479,7 @@ function WorkspaceMenu({ name }: { name: string }) {
           ))}
           <DropdownMenu.Separator className="my-1 h-px bg-line" />
           <DropdownMenu.Item
-            onSelect={() => toast("Not available in this demo.")}
+            onSelect={() => useOrbit.getState().setWorkspaceDialog(true)}
             className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 outline-none data-highlighted:bg-line"
           >
             <Plus className="size-4" aria-hidden="true" />
@@ -533,12 +541,12 @@ export function ProfileMenu({ children }: { children: ReactNode }) {
           <MenuAction onSelect={() => useOrbit.getState().setPrefsDialog(true)}>Preferences</MenuAction>
           <MenuAction
             onSelect={() => {
-              if (!window.confirm("Reset demo data on this device? Messages you sent will be removed.")) return;
-              useOrbit.getState().resetDemo();
-              toast("Demo data restored.");
+              if (!window.confirm("Reset local layout and clear unsent drafts on this device?")) return;
+              useOrbit.getState().resetLocalView();
+              toast("Local view reset.");
             }}
           >
-            Reset demo data
+            Reset local view
           </MenuAction>
           <MenuAction
             onSelect={() => requestSignOut()}

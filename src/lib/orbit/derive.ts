@@ -38,7 +38,13 @@ export function conversationsOf(extra: Conversation[]) {
 
 export function assembleMessages(state: Pick<PersistedOrbit, "createdMessages" | "edited" | "deletedIds" | "reactionOverrides">) {
   const deleted = new Set(state.deletedIds);
-  return [...SEED_MESSAGES, ...state.createdMessages]
+  const serverMessages = new Map(state.createdMessages.map((message) => [message.id, message]));
+  const seededIds = new Set(SEED_MESSAGES.map((message) => message.id));
+  const seeded = SEED_MESSAGES.map((message) => {
+    const updated = serverMessages.get(message.id);
+    return updated ? { ...message, ...updated, attachments: updated.attachments ?? message.attachments, pinned: updated.pinned ?? message.pinned, system: updated.system ?? message.system } : message;
+  });
+  return [...seeded, ...state.createdMessages.filter((message) => !seededIds.has(message.id))]
     .filter((message) => !deleted.has(message.id))
     .map((message) => {
       const edit = state.edited[message.id];
