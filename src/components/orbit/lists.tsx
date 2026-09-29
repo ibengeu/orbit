@@ -3,11 +3,9 @@ import { useMemo } from "react";
 import type { ReactNode } from "react";
 import { Avatar } from "@/components/orbit/avatar";
 import { activityItems, conversationById, conversationTitle, conversationsOf, snippet, timeLabel, userById } from "@/lib/orbit/derive";
-import { SEED_MESSAGES } from "@/lib/orbit/seed";
 import { useOrbit } from "@/lib/orbit/store";
 import type { Message } from "@/lib/orbit/types";
 
-const SEED_MESSAGES_BY_ID = new Map(SEED_MESSAGES.map((message) => [message.id, message]));
 
 export function ActivityView({ messages }: { messages: Message[] }) {
   const extra = useOrbit((state) => state.extraConversations);
@@ -98,7 +96,7 @@ export function LaterView({ messages }: { messages: Message[] }) {
   const deleted = useMemo(() => new Set(deletedIds.filter((id) => savedIdSet.has(id))), [deletedIds, savedIdSet]);
   const saved = savedIds.map((id) => {
     const live = messagesById.get(id);
-    const raw = live ?? createdById.get(id) ?? SEED_MESSAGES_BY_ID.get(id);
+    const raw = live ?? createdById.get(id);
     return { id, message: raw, deleted: deleted.has(id) || !live };
   });
 
@@ -110,7 +108,11 @@ export function LaterView({ messages }: { messages: Message[] }) {
           <button
             type="button"
             className="mt-4 inline-flex h-11 items-center rounded-md bg-accent px-4 text-sm font-semibold text-accent-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            onClick={() => useOrbit.getState().openConversation(useOrbit.getState().conversationId || "general")}
+            onClick={() => {
+              const state = useOrbit.getState();
+              if (state.conversationId) state.openConversation(state.conversationId);
+              else state.setWorkspace(state.workspaceId);
+            }}
           >
             Back to conversation
           </button>

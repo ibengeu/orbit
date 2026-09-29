@@ -71,8 +71,8 @@ export function getWorkspace(id: string) {
   return request<ApiWorkspace>(`/workspaces/${encodeURIComponent(id)}`);
 }
 
-export function createWorkspace(name: string, templateId?: "orbit" | "lumen") {
-  return request<ApiWorkspace>("/workspaces", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, templateId }) });
+export function createWorkspace(name: string) {
+  return request<ApiWorkspace>("/workspaces", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
 }
 
 export function listConversations(workspaceId: string) {

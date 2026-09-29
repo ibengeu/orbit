@@ -1,6 +1,6 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import type { Plugin } from "vite";
+import type { Plugin, ViteDevServer } from "vite";
 import { defineConfig } from "vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
@@ -43,12 +43,26 @@ function pgliteBootstrapPlugin(): Plugin {
         if (typeof mod.ensureDbReady === "function") {
           await mod.ensureDbReady();
         }
+        await seedLocalDemo(server);
       } catch (err) {
         console.error("[app-builder] DB bootstrap failed:", err);
         throw err;
       }
     },
   };
+}
+
+/**
+ * Seed the Orbit demo into the in-memory PGLite dev database. PGLite resets on
+ * every dev-server start, so this runs each time. It never touches a real
+ * database: a DATABASE_URL (Neon, compose Postgres) uses `npm run db:seed`.
+ */
+async function seedLocalDemo(server: ViteDevServer) {
+  const db = (await server.ssrLoadModule("/src/lib/db.ts")) as typeof import("./src/lib/db");
+  if (db.dbSource !== "pglite") return;
+  const { seedOrbitDemo } = (await server.ssrLoadModule("/db/seed/orbit-demo.ts")) as typeof import("./db/seed/orbit-demo");
+  // "public-demo" is the fixed auth-off owner in src/lib/orbit/api.ts.
+  await seedOrbitDemo(await db.getSql(), "public-demo");
 }
 
 /**
@@ -172,7 +186,9 @@ export default defineConfig(({ command, isPreview }) => ({
     ...(command === "build" || isPreview
       ? [
           nitro({
-            preset: "vercel",
+            // Vercel is the deploy target. The Docker image sets
+            // NITRO_PRESET=node-server to build a standalone Node server.
+            preset: process.env.NITRO_PRESET || "vercel",
             // Auto-registers server/middleware/* (the PWA install page +
             // manifest + head-tag middleware). Nitro v3 defaults serverDir to
             // false, so removing this silently unwires /?install=1 on deploys.

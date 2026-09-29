@@ -45,7 +45,7 @@ test("Lumen opens and remains selected after refresh", async () => {
   page.setDefaultTimeout(15000);
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     await page.locator("#composer").waitFor();
     await page.getByRole("button", { name: "Lumen", exact: true }).click();
     await page.waitForFunction(async () => Boolean((await (await fetch("/api/v1/conversations/lumen-general/read-state")).json()).lastReadAt));
@@ -90,7 +90,7 @@ test("selecting a person without a DM opens a new direct conversation", async ()
   page.setDefaultTimeout(4000);
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     await page.locator("#composer").waitFor();
     await page.getByRole("button", { name: "Lumen", exact: true }).click();
     await page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: /Search/ }).click();
@@ -116,7 +116,7 @@ test("creating a workspace opens it and keeps it after refresh", async () => {
   page.setDefaultTimeout(4000);
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     await page.locator("#composer").waitFor();
     await page.evaluate(() => localStorage.removeItem("orbit:v1"));
     await page.reload({ waitUntil: "domcontentloaded" });
@@ -157,7 +157,7 @@ test("a link inserted with no selection is visible in the transcript", async () 
   page.setDefaultTimeout(4000);
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     await page.locator("#composer").waitFor();
     await page.getByRole("button", { name: "Insert link" }).click();
     await page.locator("#general-link").fill("javascript:alert(1)");
@@ -207,7 +207,7 @@ test("the demo transcript sends a message through the API and restores it after 
   page.setDefaultTimeout(15000);
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     await page.locator("#composer").waitFor();
     const message = `API round trip ${Date.now()}`;
     await page.locator("#composer").fill(message);
@@ -231,7 +231,7 @@ test("an attached file can be downloaded after the page reloads", async () => {
   page.setDefaultTimeout(15000);
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     await page.locator("#composer").waitFor();
     const message = `File round trip ${Date.now()}`;
     await page.locator('input[type="file"]').setInputFiles({ name: "orbit-note.txt", mimeType: "text/plain", buffer: Buffer.from("persistent file") });
@@ -258,7 +258,7 @@ test("a failed send restores the draft and reports the failure", async () => {
   page.setDefaultTimeout(15000);
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     await page.locator("#composer").waitFor();
     await page.route("**/api/v1/conversations/general/messages", async (route) => {
       if (route.request().method() !== "POST") return route.continue();
@@ -289,7 +289,7 @@ test("another account does not receive cached messages, workspaces, or drafts", 
   try {
     await page.route("**/api/v1/me/profile", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ userId: "second-account", presence: "online", status: "" }) }));
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     await page.locator("#composer").waitFor();
     const visible = await page.locator("body").innerText();
     assert.doesNotMatch(visible, /First account private message|First account private workspace/);
@@ -305,7 +305,7 @@ test("the verified user keeps a local draft after reload", async () => {
   page.setDefaultTimeout(15000);
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     await page.locator("#composer").waitFor();
     await page.locator("#composer").fill("A private local draft");
     await page.waitForFunction(() => Boolean(localStorage.getItem("orbit:v1:public-demo")));
@@ -327,7 +327,7 @@ test("workspace loading reports an API failure and retries", async () => {
   });
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     await page.getByRole("alert").getByText(/Could not load the workspace/).waitFor();
     fail = false;
     await page.getByRole("button", { name: "Try again" }).click();
@@ -342,7 +342,7 @@ test("the message composer enforces the API body limit", async () => {
   const page = await context.newPage();
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     await page.locator("#composer").fill("x".repeat(4001));
     assert.equal((await page.locator("#composer").inputValue()).length, 4000);
   } finally {
@@ -356,7 +356,7 @@ test("a thread reply persists with its parent message", async () => {
   page.setDefaultTimeout(15000);
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     const parent = page.locator("#msg-gen-checklist");
     await parent.scrollIntoViewIfNeeded();
     await parent.hover();
@@ -405,7 +405,7 @@ test("message controls persist reaction, edit, deletion, and restore", async () 
   page.setDefaultTimeout(15000);
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     const original = `Mutation test ${Date.now()}`;
     await page.locator("#composer").fill(original);
     await page.locator("#composer").press("Enter");
@@ -451,7 +451,7 @@ test("immediate undo waits for deletion and remains restored after reload", asyn
   let releaseDelete = () => {};
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     const body = `Rapid undo ${Date.now()}`;
     await page.locator("#composer").fill(body);
     await page.locator("#composer").press("Enter");
@@ -497,7 +497,7 @@ test("profile and preference controls persist through the API", async () => {
   page.setDefaultTimeout(15000);
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     const profileButton = page.getByRole("navigation", { name: "Workspaces" }).getByRole("button", { name: "Your profile" });
     await profileButton.click();
     await page.getByRole("menuitemradio", { name: "Away" }).click();
@@ -526,7 +526,7 @@ test("resetting the local view keeps server messages", async () => {
   page.on("dialog", (dialog) => dialog.accept());
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     await page.locator("#composer").waitFor();
     const body = `Keep server message ${Date.now()}`;
     await page.locator("#composer").fill(body);
@@ -547,7 +547,7 @@ test("a voice call records lobby and ended states on the server", async () => {
   page.setDefaultTimeout(15000);
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     await page.waitForFunction(async () => (await fetch("/api/v1/workspaces/orbit")).ok);
     await page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: /Priya/ }).first().click();
     const createdCall = page.waitForResponse((response) => response.url().includes("/calls") && response.request().method() === "POST");
@@ -589,7 +589,7 @@ test("pagehide ends an active call with a navigation-safe request", async () => 
   page.setDefaultTimeout(15000);
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     await page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: /Priya/ }).first().click();
     const createdCall = page.waitForResponse((response) => response.url().includes("/calls") && response.request().method() === "POST");
     await page.getByRole("button", { name: /Voice call with/ }).click();
@@ -626,7 +626,7 @@ test("a cancelled pagehide request is retried after reload", async () => {
   page.setDefaultTimeout(15000);
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     await page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: /Priya/ }).first().click();
     const createdCall = page.waitForResponse((response) => response.url().includes("/calls") && response.request().method() === "POST");
     await page.getByRole("button", { name: /Voice call with/ }).click();
@@ -657,7 +657,7 @@ test("a video demo call can join without unavailable devices", async () => {
   page.setDefaultTimeout(15000);
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     await page.waitForFunction(async () => (await fetch("/api/v1/workspaces/orbit")).ok);
     await page.getByRole("navigation", { name: "Sidebar" }).getByRole("button", { name: /Priya/ }).first().click();
     const createdCall = page.waitForResponse((response) => response.url().includes("/calls") && response.request().method() === "POST");
@@ -681,7 +681,7 @@ test("creating a channel persists the server conversation resource", async () =>
   page.setDefaultTimeout(15000);
   try {
     await page.goto(`http://127.0.0.1:${serverPort}/`, { waitUntil: "domcontentloaded" });
-    await page.getByRole("button", { name: "Continue to demo" }).click();
+    await page.getByRole("button", { name: "Continue as Alex Morgan" }).click();
     await page.waitForFunction(async () => (await fetch("/api/v1/workspaces/orbit")).ok);
     await page.getByRole("button", { name: "Add to Channels" }).click();
     const dialog = page.getByRole("dialog", { name: "Create a channel" });

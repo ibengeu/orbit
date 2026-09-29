@@ -28,57 +28,41 @@ export function OrbitMark({ className }: { className?: string }) {
   );
 }
 
-const SAMPLE_WORKSPACES = [
-  { id: "orbit", name: "Orbit", live: true },
-  { id: "lumen", name: "Lumen", live: false },
-  { id: "field", name: "Field", live: false },
-] as const;
-
 const EMPTY_BADGE = { unread: 0, mentions: 0 };
 
 export function WorkspaceRail() {
   const presence = useOrbit((state) => state.presence);
   const activeWorkspaceId = useOrbit((state) => state.workspaceId);
   const extraWorkspaces = useOrbit((state) => state.extraWorkspaces);
-  const available = workspacesOf(extraWorkspaces);
-  const workspaceItems = [
-    ...available.map((workspace) => ({ ...workspace, live: true })),
-    ...SAMPLE_WORKSPACES.filter((workspace) => !available.some((item) => item.id === workspace.id)),
-  ];
+  const workspaceItems = workspacesOf(extraWorkspaces);
 
   return (
     <nav aria-label="Workspaces" className="flex h-full w-rail shrink-0 flex-col items-center gap-3 bg-plum py-3 text-paper">
       <div className="flex w-full flex-1 flex-col items-center gap-2">
-        {workspaceItems.map((workspace) =>
-          workspace.live ? (
-            <button
-              key={workspace.id}
-              type="button"
-              aria-current={workspace.id === activeWorkspaceId ? "page" : undefined}
-              aria-label={workspace.name}
-              onClick={() => useOrbit.getState().setWorkspace(workspace.id)}
-              className={cn(
-                "relative inline-flex size-11 items-center justify-center rounded-lg border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper",
-                workspace.id === activeWorkspaceId
-                  ? "border-paper bg-paper text-ink"
-                  : "border-plum-line bg-plum-raised text-plum-muted hover:bg-plum-hover hover:text-paper",
-              )}
-            >
-              {workspace.id === activeWorkspaceId ? (
-                <span className="absolute -left-3 h-5 w-1 rounded-full bg-paper" aria-hidden="true" />
-              ) : null}
-              {workspace.id === "orbit" ? (
-                <OrbitMark className="size-6" />
-              ) : (
-                <WorkspaceGlyph id={workspace.id} initials={"initials" in workspace ? workspace.initials : undefined} />
-              )}
-            </button>
-          ) : (
-            <RailNotice key={workspace.id} label={workspace.name} message="Only Orbit is available in this demo">
-              <WorkspaceGlyph id={workspace.id} />
-            </RailNotice>
-          ),
-        )}
+        {workspaceItems.map((workspace) => (
+          <button
+            key={workspace.id}
+            type="button"
+            aria-current={workspace.id === activeWorkspaceId ? "page" : undefined}
+            aria-label={workspace.name}
+            onClick={() => useOrbit.getState().setWorkspace(workspace.id)}
+            className={cn(
+              "relative inline-flex size-11 items-center justify-center rounded-lg border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper",
+              workspace.id === activeWorkspaceId
+                ? "border-paper bg-paper text-ink"
+                : "border-plum-line bg-plum-raised text-plum-muted hover:bg-plum-hover hover:text-paper",
+            )}
+          >
+            {workspace.id === activeWorkspaceId ? (
+              <span className="absolute -left-3 h-5 w-1 rounded-full bg-paper" aria-hidden="true" />
+            ) : null}
+            {workspace.id === "orbit" ? (
+              <OrbitMark className="size-6" />
+            ) : (
+              <WorkspaceGlyph id={workspace.id} initials={workspace.initials} />
+            )}
+          </button>
+        ))}
         <button
           type="button"
           aria-label="Add a workspace"
@@ -120,31 +104,6 @@ function WorkspaceGlyph({ id, initials }: { id: string; initials?: string }) {
       <rect x="8" y="18" width="6" height="6" rx="1" fill="currentColor" />
       <rect x="18" y="18" width="6" height="6" rx="1" fill="currentColor" />
     </svg>
-  );
-}
-
-function RailNotice({ label, message, children }: { label: string; message: string; children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <span className="relative" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
-      <button
-        type="button"
-        aria-label={label}
-        onClick={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-        className="inline-flex size-11 items-center justify-center rounded-lg border border-plum-line bg-plum-raised text-plum-muted hover:bg-plum-hover hover:text-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-paper"
-      >
-        {children}
-      </button>
-      {open ? (
-        <span
-          role="tooltip"
-          className="absolute top-1/2 left-full z-50 ml-2 -translate-y-1/2 rounded-md bg-paper px-2 py-1 text-xs font-medium whitespace-nowrap text-ink shadow-pop"
-        >
-          {message}
-        </span>
-      ) : null}
-    </span>
   );
 }
 
@@ -437,11 +396,7 @@ function WorkspaceMenu({ name }: { name: string }) {
   const menu = useOrbit((state) => state.menu);
   const workspaceId = useOrbit((state) => state.workspaceId);
   const extraWorkspaces = useOrbit((state) => state.extraWorkspaces);
-  const available = workspacesOf(extraWorkspaces);
-  const workspaceItems = [
-    ...available.map((workspace) => ({ ...workspace, live: true })),
-    ...SAMPLE_WORKSPACES.filter((workspace) => !available.some((item) => item.id === workspace.id)),
-  ];
+  const workspaceItems = workspacesOf(extraWorkspaces);
   return (
     <DropdownMenu.Root
       open={menu === "workspace"}
@@ -464,10 +419,7 @@ function WorkspaceMenu({ name }: { name: string }) {
           {workspaceItems.map((workspace) => (
             <DropdownMenu.Item
               key={workspace.id}
-              onSelect={() => {
-                if (workspace.live) useOrbit.getState().setWorkspace(workspace.id);
-                else toast(`${workspace.name} is coming soon.`);
-              }}
+              onSelect={() => useOrbit.getState().setWorkspace(workspace.id)}
               className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-2 outline-none data-highlighted:bg-line"
             >
               <span className="inline-flex size-6 items-center justify-center rounded-md bg-plum text-paper">
@@ -475,7 +427,7 @@ function WorkspaceMenu({ name }: { name: string }) {
               </span>
               <span className="flex-1 truncate">{workspace.name}</span>
               <span className="text-xs text-ink-faint">
-                {workspace.live ? (workspace.id === workspaceId ? "Current" : "Open") : "Coming soon"}
+                {workspace.id === workspaceId ? "Current" : "Open"}
               </span>
             </DropdownMenu.Item>
           ))}

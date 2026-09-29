@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { SEED_CONVERSATIONS, SEED_MESSAGES, SEED_WORKSPACES, YOU } from "./seed.ts";
+import { YOU } from "./seed.ts";
+import { getConfiguredOptiStorage, type OrbitAttachmentStorage } from "./object-store.server.ts";
 
 export type OrbitSql = {
   query<T = Record<string, unknown>>(text: string, params?: unknown[]): Promise<T[]>;
 };
 
-export type OrbitApiContext = { sql: OrbitSql; userId: string };
-export type OrbitIdentityContext = { sql: OrbitSql; authenticationRequired: boolean; verifiedUserId: string | null };
+export type OrbitApiContext = { sql: OrbitSql; userId: string; attachmentStorage?: OrbitAttachmentStorage | null };
+export type OrbitIdentityContext = { sql: OrbitSql; authenticationRequired: boolean; verifiedUserId: string | null; attachmentStorage?: OrbitAttachmentStorage | null };
 
 const PUBLIC_DEMO_OWNER_ID = "public-demo";
 
@@ -35,7 +36,6 @@ class ApiRequestError extends Error {
 
 const workspaceSchema = z.object({
   name: z.string().trim().min(1).max(80),
-  templateId: z.enum(["orbit", "lumen"]).optional(),
 }).strict();
 const conversationSchema = z.object({
   kind: z.enum(["channel", "dm"]),
@@ -234,72 +234,6 @@ function toDate(value: unknown) {
   return value instanceof Date ? value.toISOString() : String(value);
 }
 
-async function seedDemoWorkspace(context: OrbitApiContext, templateId: "orbit" | "lumen") {
-  const conversations = SEED_CONVERSATIONS.filter((entry) => entry.workspaceId === templateId);
-  const conversationRows = conversations.map((item) => [
-    context.userId,
-    item.id,
-    item.workspaceId,
-    item.kind,
-    item.kind === "channel" ? item.name : null,
-    item.kind === "channel" ? item.description : null,
-    JSON.stringify((item.kind === "channel" ? item.memberIds : item.participantIds).map((id) => id === YOU ? context.userId : id)),
-    item.kind === "dm" ? item.title ?? null : null,
-  ]);
-  if (conversationRows.length) {
-    await context.sql.query(
-      "insert into orbit_conversations (owner_id, id, workspace_id, kind, name, description, participant_ids, title) values " +
-        sqlValues(conversationRows, new Set([6])) + " on conflict do nothing",
-      conversationRows.flat(),
-    );
-  }
-
-  const conversationIds = new Set(conversations.map((item) => item.id));
-  const messages = SEED_MESSAGES.filter((entry) => conversationIds.has(entry.conversationId));
-  const messageRows = messages.map((item) => [
-    context.userId,
-    item.id,
-    item.conversationId,
-    item.authorId === YOU ? context.userId : item.authorId,
-    item.body,
-    item.parentId ?? null,
-    item.createdAt,
-  ]);
-  if (messageRows.length) {
-    await context.sql.query(
-      "insert into orbit_messages (owner_id, id, conversation_id, author_id, body, parent_id, created_at) values " +
-        sqlValues(messageRows) + " on conflict do nothing",
-      messageRows.flat(),
-    );
-  }
-
-  const reactionRows = messages.flatMap((item) => item.reactions.flatMap((reaction) =>
-    reaction.userIds.map((userId) => [context.userId, item.id, userId === YOU ? context.userId : userId, reaction.emoji]),
-  ));
-  if (reactionRows.length) {
-    await context.sql.query(
-      "insert into orbit_reactions (owner_id, message_id, user_id, emoji, created_at) values " +
-        reactionValues(reactionRows) + " on conflict do nothing",
-      reactionRows.flat(),
-    );
-  }
-}
-
-function sqlValues(rows: unknown[][], jsonColumns = new Set<number>()) {
-  // OWASP A07:2025 Injection. Bind fixture values so message text cannot become executable SQL.
-  let parameter = 1;
-  return rows.map((row) => "(" + row.map((_, index) => "$" + parameter++ + (jsonColumns.has(index) ? "::jsonb" : "")).join(", ") + ")").join(", ");
-}
-
-function reactionValues(rows: unknown[][]) {
-  // OWASP A07:2025 Injection. Bind fixture fields; only the numeric row index shapes the timestamp SQL.
-  let parameter = 1;
-  return rows.map((row, index) => {
-    const values = row.map(() => "$" + parameter++).join(", ");
-    return "(" + values + ", CURRENT_TIMESTAMP + (" + index + " * interval '1 microsecond'))";
-  }).join(", ");
-}
-
 async function workspace(context: OrbitApiContext, id: string) {
   const rows = await context.sql.query<JsonObject>(
     "select id, name, initials, created_at, updated_at from orbit_workspaces where owner_id = $1 and id = $2",
@@ -333,7 +267,7 @@ async function conversation(context: OrbitApiContext, id: string) {
 
 async function message(context: OrbitApiContext, id: string) {
   const rows = await context.sql.query<JsonObject>(
-    `select id, conversation_id, author_id, body, parent_id, created_at, edited_at, deleted_at, version
+    `select id, conversation_id, author_id, body, parent_id, created_at, edited_at, deleted_at, version, pinned
        from orbit_messages where owner_id = $1 and id = $2`,
     [context.userId, id],
   );
@@ -358,6 +292,7 @@ async function message(context: OrbitApiContext, id: string) {
     createdAt: toDate(row.created_at),
     ...(row.edited_at == null ? {} : { editedAt: toDate(row.edited_at) }),
     ...(row.deleted_at == null ? {} : { deletedAt: toDate(row.deleted_at) }),
+    pinned: row.pinned === true,
     reactions: [...grouped].map(([emoji, userIds]) => ({ emoji, userIds })),
     ...(attachments.length ? { attachments: attachments.map((item) => ({ id: item.id, name: item.name, size: Number(item.size_bytes) })) } : {}),
     version: Number(row.version),
@@ -455,25 +390,17 @@ async function listWorkspaceResources(context: OrbitApiContext) {
 async function createWorkspaceResource(request: Request, context: OrbitApiContext) {
   const parsed = workspaceSchema.safeParse(await readJson(request));
   if (!parsed.success) return validationProblem(parsed.error, request);
-  const template = parsed.data.templateId ? SEED_WORKSPACES.find((item) => item.id === parsed.data.templateId) : null;
-  if (template && parsed.data.name !== template.name) {
-    return problem(400, "validation-error", "Request validation failed", "The template and workspace name do not match.", request, {
-      errors: [{ pointer: "/name", detail: `Expected ${template.name} for this template.` }],
-    });
-  }
   const duplicate = await context.sql.query("select id from orbit_workspaces where owner_id = $1 and lower(name) = lower($2) limit 1", [context.userId, parsed.data.name]);
   if (duplicate[0]) return problem(409, "conflict", "Workspace already exists", "A workspace with this name already exists.", request);
   const existing = await context.sql.query("select id from orbit_workspaces where owner_id = $1 limit 1", [context.userId]);
-  // OWASP A01:2025: only allow fixed demo IDs from the server allowlist.
-  // This prevents a request from choosing another resource identifier.
-  const id = template ? template.id : idFor("ws");
+  // OWASP A01:2025 Broken Access Control. The server assigns every workspace id so a request cannot choose one.
+  const id = idFor("ws");
   const created = await context.sql.query<JsonObject>(
     "insert into orbit_workspaces (owner_id, id, name, initials) values ($1, $2, $3, $4) on conflict do nothing returning id, name, initials, created_at, updated_at",
     [context.userId, id, parsed.data.name, initialsFor(parsed.data.name)],
   );
   if (!created[0]) return problem(409, "conflict", "Workspace already exists", "A workspace with this name already exists.", request);
-  if (template) await seedDemoWorkspace(context, template.id as "orbit" | "lumen");
-  else await createGeneralChannel(context, id, parsed.data.name, Boolean(existing[0]));
+  await createGeneralChannel(context, id, parsed.data.name, Boolean(existing[0]));
   const row = created[0];
   return json({ id: String(row.id), name: String(row.name), initials: String(row.initials), createdAt: toDate(row.created_at), updatedAt: toDate(row.updated_at) }, 201);
 }
@@ -570,7 +497,7 @@ async function listConversationMessages(request: Request, context: OrbitApiConte
 
 async function selectMessagePage(context: OrbitApiContext, conversationId: string, pagination: PageParams) {
   const { limit, cursor, after, includeDeleted } = pagination;
-  const columns = `select id, conversation_id, author_id, body, parent_id, created_at, edited_at, deleted_at, version,
+  const columns = `select id, conversation_id, author_id, body, parent_id, created_at, edited_at, deleted_at, version, pinned,
     to_char(created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as page_created_at
     from orbit_messages where owner_id = $1 and conversation_id = $2
     and ($3::boolean or deleted_at is null)`;
@@ -645,6 +572,7 @@ function serializeMessageRow(
     createdAt: toDate(row.created_at),
     ...(row.edited_at == null ? {} : { editedAt: toDate(row.edited_at) }),
     ...(row.deleted_at == null ? {} : { deletedAt: toDate(row.deleted_at) }),
+    pinned: row.pinned === true,
     reactions: grouped ? [...grouped].map(([emoji, userIds]) => ({ emoji, userIds })) : [],
     ...(files?.length ? { attachments: files } : {}),
     version: Number(row.version),
@@ -672,6 +600,38 @@ async function createConversationMessage(request: Request, context: OrbitApiCont
 async function insertMessageWithFile(context: OrbitApiContext, id: string, conversationId: string, input: Awaited<ReturnType<typeof readMultipartMessage>>) {
   const bytes = Buffer.from(await input.file.arrayBuffer());
   const attachmentId = idFor("att");
+  const storage = resolveAttachmentStorage(context);
+  if (storage) {
+    // OWASP A07:2025 Injection. Generate object keys on the server so an uploaded filename cannot control a storage path.
+    const objectKey = `attachments/${attachmentId}`;
+    try {
+      await storage.putObject(objectKey, bytes, input.file.type);
+    } catch {
+      throw new ApiRequestError(503, "attachment-storage-unavailable", "Attachment storage unavailable", "Try again later.");
+    }
+    try {
+      await context.sql.query(
+        `with created as (
+          insert into orbit_messages (owner_id, id, conversation_id, author_id, body, parent_id)
+          values ($1, $2, $3, $1, $4, $5) returning owner_id, id
+        )
+        insert into orbit_message_attachments (owner_id, id, message_id, name, media_type, size_bytes, content, object_key)
+        select owner_id, $6, id, $7, $8, $9, null, $10 from created`,
+        [context.userId, id, conversationId, input.body, input.parentId, attachmentId,
+          input.file.name, input.file.type, input.file.size, objectKey],
+      );
+    } catch (error) {
+      try {
+        await storage.deleteObject(objectKey);
+      } catch {
+        // OWASP A08:2025 Security Logging and Monitoring Failures. Record cleanup failure without logging object keys or credentials.
+        console.error("[orbit-api] attachment cleanup failed after metadata write failure");
+      }
+      throw error;
+    }
+    return;
+  }
+
   await context.sql.query(
     `with created as (
       insert into orbit_messages (owner_id, id, conversation_id, author_id, body, parent_id)
@@ -831,14 +791,26 @@ async function handleMessage(request: Request, context: OrbitApiContext, parts: 
 
 async function getMessageAttachment(request: Request, context: OrbitApiContext, messageId: string, attachmentId: string) {
   if (request.method !== "GET") return methodNotAllowed(request);
-  const rows = await context.sql.query<{ name: string; media_type: string; content: Uint8Array }>(
-    "select name, media_type, content from orbit_message_attachments where owner_id = $1 and message_id = $2 and id = $3",
+  // OWASP A01:2025 Broken Access Control. Scope metadata lookup to the verified owner before reading an object to prevent IDOR.
+  const rows = await context.sql.query<{ name: string; media_type: string; content: Uint8Array | null; object_key: string | null }>(
+    "select name, media_type, content, object_key from orbit_message_attachments where owner_id = $1 and message_id = $2 and id = $3",
     [context.userId, messageId, attachmentId],
   );
   const file = rows[0];
   if (!file) return problem(404, "not-found", "Attachment not found", "The requested attachment does not exist.", request);
+  let content = file.content;
+  if (file.object_key) {
+    const storage = resolveAttachmentStorage(context);
+    if (!storage) throw new ApiRequestError(503, "attachment-storage-unavailable", "Attachment storage unavailable", "Try again later.");
+    try {
+      content = await storage.getObject(file.object_key);
+    } catch {
+      throw new ApiRequestError(503, "attachment-storage-unavailable", "Attachment storage unavailable", "Try again later.");
+    }
+  }
+  if (!content) throw new ApiRequestError(503, "attachment-storage-unavailable", "Attachment storage unavailable", "Try again later.");
   // OWASP A07:2025 Injection. Force download with nosniff so uploaded bytes cannot execute in the app origin.
-  return new Response(Buffer.from(file.content), {
+  return new Response(Buffer.from(content), {
     status: 200,
     headers: {
       "Content-Type": file.media_type,
@@ -847,6 +819,15 @@ async function getMessageAttachment(request: Request, context: OrbitApiContext, 
       "Cache-Control": "private, no-store",
     },
   });
+}
+
+function resolveAttachmentStorage(context: OrbitApiContext) {
+  if (context.attachmentStorage !== undefined) return context.attachmentStorage;
+  try {
+    return getConfiguredOptiStorage();
+  } catch {
+    throw new ApiRequestError(503, "attachment-storage-unavailable", "Attachment storage unavailable", "Try again later.");
+  }
 }
 
 async function readProfile(context: OrbitApiContext) {
@@ -991,5 +972,5 @@ export function handleOrbitApiWithIdentity(request: Request, identity: OrbitIden
   // The fixed auth-off owner makes the public demo explicit and never trusts a client-supplied ID.
   const userId = identity.authenticationRequired ? identity.verifiedUserId : PUBLIC_DEMO_OWNER_ID;
   if (!userId) return Promise.resolve(problem(401, "unauthorized", "Authentication required", "A valid session is required.", request));
-  return handleOrbitApi(request, { sql: identity.sql, userId });
+  return handleOrbitApi(request, { sql: identity.sql, userId, attachmentStorage: identity.attachmentStorage });
 }

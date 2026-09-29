@@ -1,5 +1,5 @@
 import { format, isToday, isYesterday } from "date-fns";
-import { SEED_CONVERSATIONS, SEED_MESSAGES, SEED_WORKSPACES, USERS, YOU } from "@/lib/orbit/seed";
+import { USERS, YOU } from "@/lib/orbit/seed";
 import type { Conversation, Message, PersistedOrbit, Presence, User, Workspace } from "@/lib/orbit/types";
 
 const FIVE_MINUTES = 5 * 60 * 1000;
@@ -28,23 +28,18 @@ export function presenceLabel(presence: Presence) {
   return "Offline";
 }
 
-export function workspacesOf(extra: Workspace[]) {
-  return [...SEED_WORKSPACES, ...extra];
+// All workspace, conversation, and message data comes from the API. The demo content is a database seed.
+export function workspacesOf(workspaces: Workspace[]) {
+  return workspaces;
 }
 
-export function conversationsOf(extra: Conversation[]) {
-  return [...SEED_CONVERSATIONS, ...extra];
+export function conversationsOf(conversations: Conversation[]) {
+  return conversations;
 }
 
 export function assembleMessages(state: Pick<PersistedOrbit, "createdMessages" | "edited" | "deletedIds" | "reactionOverrides">) {
   const deleted = new Set(state.deletedIds);
-  const serverMessages = new Map(state.createdMessages.map((message) => [message.id, message]));
-  const seededIds = new Set(SEED_MESSAGES.map((message) => message.id));
-  const seeded = SEED_MESSAGES.map((message) => {
-    const updated = serverMessages.get(message.id);
-    return updated ? { ...message, ...updated, attachments: updated.attachments ?? message.attachments, pinned: updated.pinned ?? message.pinned, system: updated.system ?? message.system } : message;
-  });
-  return [...seeded, ...state.createdMessages.filter((message) => !seededIds.has(message.id))]
+  return state.createdMessages
     .filter((message) => !deleted.has(message.id))
     .map((message) => {
       const edit = state.edited[message.id];

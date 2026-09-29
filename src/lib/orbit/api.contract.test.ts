@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { handleOrbitApi, handleOrbitApiWithIdentity } from "./api.ts";
-import { SEED_CONVERSATIONS, SEED_MESSAGES, YOU } from "./seed.ts";
+import { YOU } from "./seed.ts";
+import { DEMO_CONVERSATIONS, DEMO_LAST_READ, DEMO_MESSAGES, DEMO_WORKSPACES, seedOrbitDemo } from "../../../db/seed/orbit-demo.ts";
 
 const databases: PGlite[] = [];
 
@@ -48,6 +49,7 @@ async function createApiContext(userId = "user-1") {
       edited_at timestamptz,
       deleted_at timestamptz,
       version integer not null default 1,
+      pinned boolean not null default false,
       primary key (owner_id, id),
       foreign key (owner_id, conversation_id) references orbit_conversations(owner_id, id) on delete cascade
     );
@@ -72,7 +74,9 @@ async function createApiContext(userId = "user-1") {
       name text not null,
       media_type text not null,
       size_bytes integer not null,
-      content bytea not null,
+      content bytea,
+      object_key text,
+      check ((content is null) <> (object_key is null)),
       primary key (owner_id, id),
       foreign key (owner_id, message_id) references orbit_messages(owner_id, id) on delete cascade
     );
@@ -112,6 +116,24 @@ async function createApiContext(userId = "user-1") {
     },
   };
   return { sql, userId };
+}
+
+function createMemoryAttachmentStorage() {
+  const objects = new Map<string, { content: Uint8Array; contentType: string }>();
+  return {
+    objects,
+    async putObject(key: string, content: Uint8Array, contentType: string) {
+      objects.set(key, { content: Uint8Array.from(content), contentType });
+    },
+    async getObject(key: string) {
+      const object = objects.get(key);
+      if (!object) throw new Error("Object not found");
+      return Uint8Array.from(object.content);
+    },
+    async deleteObject(key: string) {
+      objects.delete(key);
+    },
+  };
 }
 
 async function provisionWorkspace(context: Awaited<ReturnType<typeof createApiContext>>, name = "Orbit") {
@@ -622,7 +644,91 @@ test("invalid message pagination returns a field-level problem", async () => {
   assert.equal((await invalidAfter.json()).errors[0].pointer, "/after");
 });
 
-test("demo workspace creation provisions stable conversation and message resources", async () => {
+test("the demo seed gives its owner the demo workspaces, conversations, messages, and read state", async () => {
+  const context = await createApiContext();
+  await seedOrbitDemo(context.sql, context.userId);
+  // OWASP A04:2025 Insecure Design. The seed is idempotent so a repeated job cannot duplicate demo data.
+  await seedOrbitDemo(context.sql, context.userId);
+
+  const workspaces = await handleOrbitApi(new Request("https://optichat.test/api/v1/workspaces"), context);
+  assert.deepEqual((await workspaces.json()).data.map((item: { id: string; name: string }) => [item.id, item.name]).sort(),
+    DEMO_WORKSPACES.map((item) => [item.id, item.name]).sort());
+
+  const actualMessages: Array<{
+    id: string;
+    conversationId: string;
+    body: string;
+    authorId: string;
+    parentId?: string;
+    createdAt: string;
+    pinned: boolean;
+    attachments?: Array<{ id: string; name: string; size: number }>;
+    reactions: Array<{ emoji: string; userIds: string[] }>;
+  }> = [];
+  for (const workspace of DEMO_WORKSPACES) {
+    const listed = await handleOrbitApi(new Request(`https://optichat.test/api/v1/workspaces/${workspace.id}/conversations`), context);
+    const conversations = (await listed.json()).data as Array<{ id: string; participantIds: string[] }>;
+    const expectedConversations = DEMO_CONVERSATIONS.filter((item) => item.workspaceId === workspace.id);
+    // Conversations list in fixture order, so each workspace opens on its first channel.
+    assert.deepEqual(conversations.map((item) => item.id), expectedConversations.map((item) => item.id));
+    for (const conversation of conversations) {
+      assert.ok(!conversation.participantIds.includes(YOU), "the seed maps the demo user to the owner");
+      const response = await handleOrbitApi(
+        new Request(`https://optichat.test/api/v1/conversations/${conversation.id}/messages?limit=100`),
+        context,
+      );
+      assert.equal(response.status, 200);
+      const page = (await response.json()).data as typeof actualMessages;
+      const orderedExpected = DEMO_MESSAGES
+        .filter((message) => message.conversationId === conversation.id)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
+      assert.deepEqual(page.map((message) => message.id), orderedExpected.map((message) => message.id));
+      actualMessages.push(...page);
+    }
+  }
+  assert.equal(actualMessages.length, DEMO_MESSAGES.length);
+
+  for (const expected of DEMO_MESSAGES) {
+    const actual = actualMessages.find((message: { id: string }) => message.id === expected.id);
+    assert.ok(actual, `Missing seeded message ${expected.id}`);
+    assert.equal(actual.body, expected.body);
+    assert.equal(actual.authorId, expected.authorId === YOU ? context.userId : expected.authorId);
+    assert.equal(actual.parentId ?? null, expected.parentId ?? null);
+    assert.equal(actual.createdAt, expected.createdAt);
+    assert.equal(actual.pinned, expected.pinned ?? false, `pinned state of ${expected.id}`);
+    assert.deepEqual(actual.attachments, expected.attachments, `attachments of ${expected.id}`);
+    for (const file of expected.attachments ?? []) {
+      const download = await handleOrbitApi(new Request(`https://optichat.test/api/v1/messages/${expected.id}/attachments/${file.id}`), context);
+      assert.equal(download.status, 200);
+      const bytes = new Uint8Array(await download.arrayBuffer());
+      assert.equal(bytes.byteLength, file.size);
+      assert.deepEqual([...bytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], `${file.name} is a PNG`);
+    }
+    const expectedReactions = expected.reactions.map((reaction) => ({
+      emoji: reaction.emoji,
+      userIds: reaction.userIds.map((userId) => userId === YOU ? context.userId : userId),
+    }));
+    assert.deepEqual(actual.reactions, expectedReactions);
+  }
+
+  for (const [conversationId, lastReadAt] of Object.entries(DEMO_LAST_READ)) {
+    const readState = await handleOrbitApi(new Request(`https://optichat.test/api/v1/conversations/${conversationId}/read-state`), context);
+    assert.equal((await readState.json()).lastReadAt, lastReadAt);
+  }
+});
+
+test("the demo seed refuses to write into an owner whose conversation ids already belong to another workspace", async () => {
+  const context = await createApiContext();
+  await provisionWorkspace(context, "Team");
+  // OWASP A04:2025 Insecure Design. Fail safely instead of attaching demo messages to a user's own conversation.
+  await assert.rejects(seedOrbitDemo(context.sql, context.userId), /already used by another workspace/);
+  const workspaces = await handleOrbitApi(new Request("https://optichat.test/api/v1/workspaces"), context);
+  assert.deepEqual((await workspaces.json()).data.map((item: { name: string }) => item.name), ["Team"]);
+  const general = await handleOrbitApi(new Request("https://optichat.test/api/v1/conversations/general/messages"), context);
+  assert.deepEqual((await general.json()).data, []);
+});
+
+test("a workspace request cannot copy demo data or choose a demo workspace id", async () => {
   const context = await createApiContext();
   const response = await handleOrbitApi(
     new Request("https://optichat.test/api/v1/workspaces", {
@@ -632,60 +738,11 @@ test("demo workspace creation provisions stable conversation and message resourc
     }),
     context,
   );
-  assert.equal(response.status, 201);
-  assert.equal((await response.json()).id, "orbit");
-  const product = await handleOrbitApi(
-    new Request("https://optichat.test/api/v1/conversations/product/messages"),
-    context,
-  );
-  assert.equal(product.status, 200);
-  assert.ok((await product.json()).data.some((message: { id: string }) => message.id === "prod-mention"));
-
-  const expectedConversations = SEED_CONVERSATIONS.filter((item) => item.workspaceId === "orbit");
-  const expectedMessages = SEED_MESSAGES.filter((message) => expectedConversations.some((item) => item.id === message.conversationId));
-  const actualMessages: Array<{
-    id: string;
-    conversationId: string;
-    body: string;
-    authorId: string;
-    parentId?: string;
-    createdAt: string;
-    reactions: Array<{ emoji: string; userIds: string[] }>;
-  }> = [];
-  for (const conversation of expectedConversations) {
-    const response = await handleOrbitApi(
-      new Request(`https://optichat.test/api/v1/conversations/${conversation.id}/messages?limit=100`),
-      context,
-    );
-    assert.equal(response.status, 200);
-    const page = (await response.json()).data as typeof actualMessages;
-    const orderedExpected = expectedMessages
-      .filter((message) => message.conversationId === conversation.id)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id));
-    assert.deepEqual(page.map((message) => message.id), orderedExpected.map((message) => message.id));
-    actualMessages.push(...page);
-  }
-  assert.equal(actualMessages.length, expectedMessages.length);
-
-  for (const expected of expectedMessages) {
-    const actual = actualMessages.find((message: { id: string }) => message.id === expected.id);
-    assert.ok(actual, `Missing seeded message ${expected.id}`);
-    assert.equal(actual.body, expected.body);
-    assert.equal(actual.authorId, expected.authorId === YOU ? context.userId : expected.authorId);
-    assert.equal(actual.parentId ?? null, expected.parentId ?? null);
-    assert.equal(actual.createdAt, expected.createdAt);
-    const expectedReactions = expected.reactions.map((reaction) => ({
-      emoji: reaction.emoji,
-      userIds: reaction.userIds.map((userId) => userId === YOU ? context.userId : userId),
-    }));
-    assert.deepEqual(actual.reactions, expectedReactions);
-  }
-
-  const ownMessage = await handleOrbitApi(
-    new Request("https://optichat.test/api/v1/messages/gen-checklist"),
-    context,
-  );
-  assert.equal((await ownMessage.json()).authorId, "user-1");
+  // OWASP A01:2025 Broken Access Control. The server assigns workspace ids; a client field cannot select a fixed id or copy data.
+  assert.equal(response.status, 400);
+  assert.equal(response.headers.get("Content-Type"), "application/problem+json");
+  const workspaces = await handleOrbitApi(new Request("https://optichat.test/api/v1/workspaces"), context);
+  assert.deepEqual((await workspaces.json()).data, []);
 });
 
 test("message listing can include soft-delete markers for state recovery", async () => {
@@ -750,6 +807,121 @@ test("an attached file persists and only the owner can download it", async () =>
   const hidden = await handleOrbitApi(new Request(path), { ...context, userId: "user-2" });
   assert.equal(hidden.status, 404);
   assert.equal(hidden.headers.get("Content-Type"), "application/problem+json");
+});
+
+test("configured object storage keeps attachment bytes out of Postgres and serves the same bytes", async () => {
+  const context = await createApiContext();
+  const storage = createMemoryAttachmentStorage();
+  const storageContext = { ...context, attachmentStorage: storage };
+  const workspace = await provisionWorkspace(context);
+  const conversations = await handleOrbitApi(new Request(`https://optichat.test/api/v1/workspaces/${workspace.id}/conversations`), context);
+  const conversationId = (await conversations.json()).data[0].id as string;
+  const form = new FormData();
+  form.set("body", "Stored in OptiStorage");
+  form.set("file", new File(["object-store bytes"], "notes.txt", { type: "text/plain" }));
+
+  const created = await handleOrbitApi(new Request(`https://optichat.test/api/v1/conversations/${conversationId}/messages`, {
+    method: "POST", body: form,
+  }), storageContext);
+  assert.equal(created.status, 201);
+  const message = await created.json();
+  const rows = await context.sql.query<{ content: Uint8Array | null; object_key: string | null }>(
+    "select content, object_key from orbit_message_attachments where owner_id = $1 and message_id = $2",
+    [context.userId, message.id],
+  );
+  assert.equal(rows[0]?.content, null);
+  assert.ok(rows[0]?.object_key);
+  assert.deepEqual(Object.keys(message.attachments[0]).sort(), ["id", "name", "size"]);
+  assert.equal(new TextDecoder().decode(await storage.getObject(rows[0]!.object_key!)), "object-store bytes");
+
+  const download = await handleOrbitApi(new Request(`https://optichat.test/api/v1/messages/${message.id}/attachments/${message.attachments[0].id}`), storageContext);
+  assert.equal(download.status, 200);
+  assert.equal(download.headers.get("Content-Type"), "text/plain");
+  assert.equal(await download.text(), "object-store bytes");
+  const hidden = await handleOrbitApi(
+    new Request(`https://optichat.test/api/v1/messages/${message.id}/attachments/${message.attachments[0].id}`),
+    { ...storageContext, userId: "user-2" },
+  );
+  assert.equal(hidden.status, 404);
+});
+
+test("OptiStorage upload failure returns a safe error and creates no message", async () => {
+  const context = await createApiContext();
+  const workspace = await provisionWorkspace(context);
+  const conversations = await handleOrbitApi(new Request(`https://optichat.test/api/v1/workspaces/${workspace.id}/conversations`), context);
+  const conversationId = (await conversations.json()).data[0].id as string;
+  const storageContext = {
+    ...context,
+    attachmentStorage: {
+      async putObject() { throw new Error("credential-bearing upstream error"); },
+      async getObject() { throw new Error("unused"); },
+      async deleteObject() {},
+    },
+  };
+  const form = new FormData();
+  form.set("body", "Storage outage");
+  form.set("file", new File(["bytes"], "outage.txt", { type: "text/plain" }));
+
+  const response = await handleOrbitApi(new Request(`https://optichat.test/api/v1/conversations/${conversationId}/messages`, {
+    method: "POST", body: form,
+  }), storageContext);
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.get("Content-Type"), "application/problem+json");
+  assert.equal((await response.text()).includes("credential-bearing"), false);
+  const messages = await handleOrbitApi(new Request(`https://optichat.test/api/v1/conversations/${conversationId}/messages`), context);
+  assert.deepEqual((await messages.json()).data, []);
+});
+
+test("failed attachment metadata writes remove the uploaded object", async () => {
+  const context = await createApiContext();
+  const storage = createMemoryAttachmentStorage();
+  const storageContext = { ...context, attachmentStorage: storage };
+  const workspace = await provisionWorkspace(context);
+  const conversations = await handleOrbitApi(new Request(`https://optichat.test/api/v1/workspaces/${workspace.id}/conversations`), context);
+  const conversationId = (await conversations.json()).data[0].id as string;
+  await context.sql.query("alter table orbit_message_attachments add constraint reject_attachment_write check (false)");
+  const form = new FormData();
+  form.set("body", "Database failure");
+  form.set("file", new File(["temporary bytes"], "temporary.txt", { type: "text/plain" }));
+
+  const response = await handleOrbitApi(new Request(`https://optichat.test/api/v1/conversations/${conversationId}/messages`, {
+    method: "POST", body: form,
+  }), storageContext);
+  assert.equal(response.status, 500);
+  assert.equal(response.headers.get("Content-Type"), "application/problem+json");
+  assert.equal(storage.objects.size, 0);
+  const messages = await handleOrbitApi(new Request(`https://optichat.test/api/v1/conversations/${conversationId}/messages`), context);
+  assert.deepEqual((await messages.json()).data, []);
+});
+
+test("remote plain HTTP OptiStorage endpoints fail closed before accepting an attachment", async () => {
+  const context = await createApiContext();
+  const workspace = await provisionWorkspace(context);
+  const conversations = await handleOrbitApi(new Request(`https://optichat.test/api/v1/workspaces/${workspace.id}/conversations`), context);
+  const conversationId = (await conversations.json()).data[0].id as string;
+  const keys = ["OPTISTORAGE_ENDPOINT", "OPTISTORAGE_BUCKET", "OPTISTORAGE_ACCESS_KEY_ID", "OPTISTORAGE_SECRET_ACCESS_KEY"] as const;
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  process.env.OPTISTORAGE_ENDPOINT = "http://storage.example";
+  process.env.OPTISTORAGE_BUCKET = "orbit-files";
+  process.env.OPTISTORAGE_ACCESS_KEY_ID = "test-access-key";
+  process.env.OPTISTORAGE_SECRET_ACCESS_KEY = "test-secret-key";
+  try {
+    const form = new FormData();
+    form.set("body", "Should not upload");
+    form.set("file", new File(["bytes"], "blocked.txt", { type: "text/plain" }));
+    const response = await handleOrbitApi(new Request(`https://optichat.test/api/v1/conversations/${conversationId}/messages`, {
+      method: "POST", body: form,
+    }), context);
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get("Content-Type"), "application/problem+json");
+    assert.equal((await response.text()).includes("storage.example"), false);
+  } finally {
+    for (const key of keys) {
+      const value = previous[key];
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
 
 test("active content in an attachment is rejected without creating a message", async () => {

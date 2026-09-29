@@ -9,25 +9,14 @@ import { SearchDialog } from "@/components/orbit/search-dialog";
 import { ThreadPane } from "@/components/orbit/thread-pane";
 import { Welcome } from "@/components/orbit/welcome";
 import { assembleMessages, conversationById, conversationTitle, conversationsOf, workspacesOf } from "@/lib/orbit/derive";
-import { createWorkspace, getPreferences, getProfile, getReadState, listCalls, listConversations, listMessages, listSavedMessages, listWorkspaces, type ApiCall, type ApiConversation, type ApiMessage, type ApiWorkspace } from "@/lib/orbit/api-client";
-import { SEED_CONVERSATIONS, SEED_WORKSPACES, YOU } from "@/lib/orbit/seed";
+import { getPreferences, getProfile, getReadState, listCalls, listConversations, listMessages, listSavedMessages, listWorkspaces, type ApiCall, type ApiConversation, type ApiMessage, type ApiWorkspace } from "@/lib/orbit/api-client";
+import { YOU } from "@/lib/orbit/seed";
 import { clearSession, readSession } from "@/lib/orbit/session";
 import { readUserCache, useOrbit } from "@/lib/orbit/store";
 import type { Conversation, Message } from "@/lib/orbit/types";
 
 const RETURN_KEY = "orbit:return";
-const demoConversationIds = new Set(SEED_CONVERSATIONS.map((conversation) => conversation.id));
-
-async function provisionDemoWorkspaces(): Promise<ApiWorkspace[]> {
-  const current = await listWorkspaces();
-  for (const seed of SEED_WORKSPACES) {
-    if (current.data.some((workspace) => workspace.id === seed.id)) continue;
-    try {
-      await createWorkspace(seed.name, seed.id as "orbit" | "lumen");
-    } catch {
-      // A concurrent browser session can create the same resource first.
-    }
-  }
+async function loadWorkspaces(): Promise<ApiWorkspace[]> {
   return (await listWorkspaces()).data;
 }
 
@@ -78,7 +67,7 @@ function uiMessage(item: ApiMessage, userId: string): Message {
 
 async function loadServerState() {
   const [profile, preferences, saved, calls, workspaces] = await Promise.all([
-    getProfile(), getPreferences(), listSavedMessages(), loadCallHistory(), provisionDemoWorkspaces(),
+    getProfile(), getPreferences(), listSavedMessages(), loadCallHistory(), loadWorkspaces(),
   ]);
   const collections = await Promise.all(workspaces.map((workspace) => listConversations(workspace.id)));
   const conversations = collections.flatMap((collection) => collection.data);
@@ -112,7 +101,7 @@ function selectedLocation(snapshot: ServerSnapshot, local: UserCache) {
 function selectedWorkspaceId(snapshot: ServerSnapshot, local: UserCache, hashConversation: ApiConversation | undefined) {
   if (hashConversation) return hashConversation.workspaceId;
   const cached = snapshot.workspaces.find((item) => item.id === local?.workspaceId);
-  return cached?.id ?? snapshot.workspaces[0]?.id ?? "orbit";
+  return cached?.id ?? snapshot.workspaces[0]?.id ?? "";
 }
 
 function selectedConversationId(snapshot: ServerSnapshot, local: UserCache, workspaceId: string, hashConversation: ApiConversation | undefined) {
@@ -141,8 +130,8 @@ function localDraftState(local: UserCache) {
 function localNavigationState(local: UserCache) {
   return {
     collapsed: local?.collapsed ?? { channels: false, dms: false },
-    lastChannel: local?.lastChannel ?? { orbit: "general", lumen: "lumen-general" },
-    lastDm: local?.lastDm ?? { orbit: "dm-priya" },
+    lastChannel: local?.lastChannel ?? {},
+    lastDm: local?.lastDm ?? {},
   };
 }
 
@@ -155,8 +144,8 @@ function serverViewState(snapshot: ServerSnapshot, userId: string) {
     presence: snapshot.profile.presence,
     status: snapshot.profile.status,
     alwaysShowTime: snapshot.preferences.alwaysShowTime,
-    extraWorkspaces: snapshot.workspaces.filter((item) => !SEED_WORKSPACES.some((seed) => seed.id === item.id)).map(({ id, name, initials }) => ({ id, name, initials })),
-    extraConversations: snapshot.conversations.filter((item) => !demoConversationIds.has(item.id)).map((item) => uiConversation(item, userId)),
+    extraWorkspaces: snapshot.workspaces.map(({ id, name, initials }) => ({ id, name, initials })),
+    extraConversations: snapshot.conversations.map((item) => uiConversation(item, userId)),
     createdMessages: [...snapshot.messages.map((item) => uiMessage(item, userId)), ...callMessages],
     callHistory: snapshot.calls.filter((item) => item.startedAt && item.endedAt).map((item) => ({
       id: `history-${item.id}`, conversationId: item.conversationId, kind: item.kind, initiatorId: YOU,

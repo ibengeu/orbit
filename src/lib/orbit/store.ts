@@ -3,7 +3,7 @@ import { addReaction, createCall, createConversation as createServerConversation
 import { workspaceNameError } from "@/lib/orbit/compose";
 import { activityItems, assembleMessages, conversationById, conversationsOf, memberIds, slugify, workspacesOf } from "@/lib/orbit/derive";
 import { captureMedia, explainMediaError, forgetFile, localFile, localTracks, setTrackEnabled, stopCallTracks } from "@/lib/orbit/media";
-import { INITIAL_LAST_READ, STORAGE_KEY, YOU } from "@/lib/orbit/seed";
+import { STORAGE_KEY, YOU } from "@/lib/orbit/seed";
 import type { Attachment, CallHistoryItem, CallKind, Conversation, DemoCall, Message, PersistedOrbit, Presence, View, Workspace } from "@/lib/orbit/types";
 
 type OrbitStore = PersistedOrbit & {
@@ -83,8 +83,8 @@ type OrbitStore = PersistedOrbit & {
 };
 
 const EMPTY_PERSISTED = (): PersistedOrbit => ({
-  workspaceId: "orbit",
-  conversationId: "general",
+  workspaceId: "",
+  conversationId: "",
   threadParentId: null,
   view: "conversation",
   drafts: {},
@@ -94,9 +94,9 @@ const EMPTY_PERSISTED = (): PersistedOrbit => ({
   activityReadIds: [],
   callHistory: [],
   collapsed: { channels: false, dms: false },
-  lastRead: { ...INITIAL_LAST_READ },
-  lastChannel: { orbit: "general", lumen: "lumen-general" },
-  lastDm: { orbit: "dm-priya" },
+  lastRead: {},
+  lastChannel: {},
+  lastDm: {},
   createdMessages: [],
   edited: {},
   deletedIds: [],
@@ -687,15 +687,13 @@ export const useOrbit = create<OrbitStore>((set, get) => ({
 
   resetLocalView: () => {
     set({
-      workspaceId: "orbit",
-      conversationId: "general",
       threadParentId: null,
       view: "conversation",
       drafts: {},
       draftAttachments: {},
       collapsed: { channels: false, dms: false },
-      lastChannel: { orbit: "general", lumen: "lumen-general" },
-      lastDm: { orbit: "dm-priya" },
+      lastChannel: {},
+      lastDm: {},
       highlightId: null,
       searchOpen: false,
       searchScopeId: null,

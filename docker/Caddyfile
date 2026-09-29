@@ -1,0 +1,13 @@
+{
+	# The internal CA stays inside the stack. Orbit trusts its root through NODE_EXTRA_CA_CERTS.
+	skip_install_trust
+	admin off
+	auto_https disable_redirects
+}
+
+storage.orbit.internal {
+	tls internal
+	# Caddy keeps the original Host header and sets X-Forwarded-Proto, so SigV4
+	# signatures stay valid and OptiStorage sees HTTPS from this trusted proxy.
+	reverse_proxy optistorage:9000
+}

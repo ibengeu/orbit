@@ -1,0 +1,167 @@
+# Orbit + Postgres + OptiStorage behind a Caddy HTTPS proxy.
+# First run: ./docker/init-secrets.sh && docker compose up -d (builds missing images, then reuses them)
+# Then open http://127.0.0.1:3000. See docs/docker-compose.md.
+
+name: orbit
+
+x-storage-endpoint: &storage-endpoint
+  OPTISTORAGE_ENDPOINT: https://storage.orbit.internal
+  OPTISTORAGE_BUCKET: orbit-attachments
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: orbit
+      POSTGRES_DB: orbit
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orbit -d orbit"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  migrate:
+    build: { context: ., dockerfile: docker/Dockerfile, target: tools }
+    image: orbit-tools:local
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - 'export DATABASE_URL="postgres://orbit:$$(cat /run/secrets/postgres_password)@postgres:5432/orbit" && exec node scripts/migrate.mjs'
+    secrets: [postgres_password]
+    networks: [backend]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  seed:
+    image: orbit-tools:local
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - 'export DATABASE_URL="postgres://orbit:$$(cat /run/secrets/postgres_password)@postgres:5432/orbit" && exec node scripts/seed.mjs'
+    secrets: [postgres_password]
+    networks: [backend]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    restart: "no"
+
+  optistorage:
+    build: { context: ../optiStorage }
+    image: optistorage:local
+    environment:
+      OPTISTORAGE_ADMIN_TOKEN_FILE: /run/secrets/optistorage_admin_token
+      OPTISTORAGE_APP_ENCRYPTION_KEY_FILE: /run/secrets/optistorage_app_encryption_key
+      OPTISTORAGE_CONTINUATION_TOKEN_KEY_FILE: /run/secrets/optistorage_continuation_token_key
+      # OWASP A02:2025 Security Misconfiguration. Trust forwarded HTTPS only from Caddy's fixed address to block spoofed headers.
+      OPTISTORAGE_TRUSTED_PROXIES: 172.30.10.2
+    secrets: [optistorage_admin_token, optistorage_app_encryption_key, optistorage_continuation_token_key]
+    volumes:
+      - optistorage-data:/var/lib/optistorage/data
+    # No published ports. The admin listener stays on this container's loopback.
+    networks:
+      storage: { ipv4_address: 172.30.10.3 }
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.10-alpine
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./docker/caddy-entrypoint.sh:/usr/local/bin/caddy-entrypoint:ro
+      - caddy-data:/data
+      - caddy-ca:/ca
+    entrypoint: ["/bin/sh", "/usr/local/bin/caddy-entrypoint"]
+    networks:
+      storage:
+        ipv4_address: 172.30.10.2
+        aliases: [storage.orbit.internal]
+    depends_on: [optistorage]
+    # Healthy only after the public root is published. Node reads NODE_EXTRA_CA_CERTS once at start.
+    healthcheck:
+      test: ["CMD", "test", "-s", "/ca/root.crt"]
+      interval: 1s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
+
+  provision:
+    image: orbit-tools:local
+    command: ["node", "docker/provision-optistorage.mjs"]
+    environment:
+      <<: *storage-endpoint
+      OPTISTORAGE_ADMIN_TOKEN_FILE: /run/secrets/optistorage_admin_token
+      NODE_EXTRA_CA_CERTS: /caddy-ca/root.crt
+    secrets: [optistorage_admin_token]
+    volumes:
+      - orbit-storage-credentials:/run/orbit-storage
+      # Only the public root certificate. The CA keys stay in caddy-data.
+      - caddy-ca:/caddy-ca:ro
+    # Share OptiStorage's network namespace to reach its loopback-only admin API.
+    network_mode: service:optistorage
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      caddy: { condition: service_healthy }
+    restart: "no"
+
+  orbit:
+    build: { context: ., dockerfile: docker/Dockerfile, target: runtime }
+    image: orbit:local
+    environment:
+      # Auth off, matching .grok/app-env.json. Data belongs to the public demo owner, and
+      # the port is published on host loopback only. Set "true" with Better Auth secrets for accounts.
+      VITE_AUTH_ENABLED: "false"
+      POSTGRES_USER: orbit
+      POSTGRES_DB: orbit
+      POSTGRES_HOST: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      # OWASP A05:2025 Cryptographic Failures. Trust only the stack's internal CA root for the storage TLS hop.
+      NODE_EXTRA_CA_CERTS: /caddy-ca/root.crt
+    secrets: [postgres_password]
+    volumes:
+      - orbit-storage-credentials:/run/orbit-storage:ro
+      # Only the public root certificate. The CA keys stay in caddy-data.
+      - caddy-ca:/caddy-ca:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks: [edge, backend, storage]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      seed: { condition: service_completed_successfully }
+      provision: { condition: service_completed_successfully }
+      caddy: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+networks:
+  edge: {}
+  backend:
+    internal: true
+  storage:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.10.0/24
+
+volumes:
+  postgres-data:
+  optistorage-data:
+  caddy-data:
+  caddy-ca:
+  orbit-storage-credentials:
+
+secrets:
+  postgres_password:
+    file: ./docker/secrets/postgres_password
+  optistorage_admin_token:
+    file: ./docker/secrets/optistorage_admin_token
+  optistorage_app_encryption_key:
+    file: ./docker/secrets/optistorage_app_encryption_key
+  optistorage_continuation_token_key:
+    file: ./docker/secrets/optistorage_continuation_token_key

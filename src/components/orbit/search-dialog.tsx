@@ -318,7 +318,7 @@ function dmFor(conversations: Conversation[], userId: string) {
 }
 
 function recentConversations(conversations: Map<string, Conversation>, recentIds: string[], currentId: string) {
-  const ids = recentIds.length > 0 ? recentIds : [currentId, "general", "product", "design"];
+  const ids = recentIds.length > 0 ? recentIds : [currentId];
   const unique = [...new Set(ids)];
   return unique
     .map((id) => conversations.get(id))
